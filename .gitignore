@@ -1,0 +1,16 @@
+# Secrets and personal settings
+.env
+
+# Personal data: search profile, CVs, database, logs
+profile.md
+cv*
+*.pdf
+*.docx
+data/
+logs/
+*.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/

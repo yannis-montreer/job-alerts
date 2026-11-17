@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job Alerts</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6677; --line: #e2e5eb;
+  --accent: #2f6fdb; --accent-text: #ffffff; --ok: #1f8a4c; --warn: #b7791f; --bad: #c53030;
+  --ok-bg: #e6f4ec; --warn-bg: #fdf3e1; --bad-bg: #fbe9e9; --code: #f0f2f5;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171c; --panel: #1c2028; --text: #e6e9ef; --muted: #9aa3b2; --line: #2c323d;
+    --accent: #6b9bff; --accent-text: #0d1117; --ok: #4cc38a; --warn: #f0b44c; --bad: #ff7b72;
+    --ok-bg: #16301f; --warn-bg: #33270f; --bad-bg: #3a1a1a; --code: #252a33;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+a { color: var(--accent); }
+.layout { display: flex; min-height: 100vh; }
+nav { width: 210px; flex: none; padding: 20px 12px; border-right: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; height: 100vh; }
+nav h1 { font-size: 17px; margin: 0 8px 16px; }
+nav a { display: block; padding: 7px 10px; border-radius: 6px; color: var(--text); text-decoration: none; }
+nav a:hover, nav a.active { background: var(--code); }
+main { flex: 1; padding: 24px; max-width: 980px; min-width: 0; }
+section { display: none; }
+section.active { display: block; }
+h2 { margin: 0 0 4px; font-size: 22px; }
+.lead { color: var(--muted); margin: 0 0 20px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+.card h3 { margin: 0 0 10px; font-size: 16px; }
+label { display: block; font-weight: 600; margin: 12px 0 4px; }
+.hint { color: var(--muted); font-size: 13px; font-weight: 400; }
+input[type=text], input[type=password], input[type=time], input[type=number], select, textarea {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit;
+}
+textarea { min-height: 420px; font: 13px/1.5 ui-monospace, Consolas, monospace; }
+button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+button:disabled { opacity: .5; cursor: default; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.checks { list-style: none; padding: 0; margin: 0; }
+.checks li { display: flex; gap: 10px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.checks li:last-child { border-bottom: 0; }
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: none; transform: translateY(1px); }
+.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); } .dot.off { background: var(--muted); }
+.checks .what { font-weight: 600; min-width: 130px; }
+.checks .go { margin-left: auto; font-size: 13px; }
+.muni { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 2px 12px; }
+.muni label { font-weight: 400; margin: 0; display: flex; gap: 6px; align-items: center; }
+.group-title { font-weight: 600; margin: 12px 0 4px; display: flex; gap: 10px; align-items: center; }
+.group-title button { padding: 2px 8px; font-size: 12px; }
+pre.log { background: var(--code); padding: 12px; border-radius: 6px; overflow: auto; max-height: 360px; font-size: 12px; margin: 12px 0 0; white-space: pre-wrap; word-break: break-word; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 13px; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+.badge.keep { background: var(--ok-bg); color: var(--ok); } .badge.reject { background: var(--bad-bg); color: var(--bad); }
+.badge.none { background: var(--code); color: var(--muted); }
+.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+.stat { background: var(--code); border-radius: 8px; padding: 10px; }
+.stat b { display: block; font-size: 22px; }
+.stat span { color: var(--muted); font-size: 13px; }
+ol.steps { padding-left: 20px; margin: 0; } ol.steps li { margin-bottom: 6px; }
+code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+.msg { padding: 10px 12px; border-radius: 6px; margin-top: 12px; display: none; }
+.msg.ok { display: block; background: var(--ok-bg); color: var(--ok); }
+.msg.bad { display: block; background: var(--bad-bg); color: var(--bad); }
+.msg.info { display: block; background: var(--code); color: var(--text); }
+#toast { position: fixed; right: 20px; bottom: 20px; padding: 10px 16px; border-radius: 8px; background: var(--text); color: var(--bg); opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 420px; }
+#toast.show { opacity: .95; }
+@media (max-width: 760px) {
+  .layout { flex-direction: column; }
+  nav { width: auto; height: auto; position: static; border-right: 0; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 4px; padding: 10px 16px; }
+  nav h1 { width: 100%; margin: 0 0 6px; }
+  main { padding: 16px; }
+  .grid2 { grid-template-columns: 1fr; }
+  table { display: block; overflow-x: auto; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav id="nav">
+  <h1>Job Alerts</h1>
+  <a href="#overview">Overview</a>
+  <a href="#search">You &amp; search</a>
+  <a href="#telegram">Telegram</a>
+  <a href="#claude">Claude</a>
+  <a href="#finn">Finn alerts</a>
+  <a href="#schedule">Schedule</a>
+  <a href="#run">Run now</a>
+  <a href="#history">History</a>
+</nav>
+<main>
+
+<section id="overview">
+  <h2>Overview</h2>
+  <p class="lead">What is set up, and what is left. Each line links to its section.</p>
+  <div class="card"><ul class="checks" id="checks"><li>Loading…</li></ul></div>
+  <div class="card"><h3>Numbers</h3><div class="stats" id="stats"></div></div>
+  <div class="card"><h3>Recent runs</h3><pre class="log" id="lastRuns">…</pre></div>
+</section>
+
+<section id="search">
+  <h2>You &amp; search</h2>
+  <p class="lead">Who the ads are for, the language, the area, and your profile.</p>
+  <div class="card">
+    <h3>Basics</h3>
+    <div class="grid2">
+      <div><label for="CANDIDATE_NAME">First name <span class="hint">used in the sorting instructions</span></label>
+        <input type="text" id="CANDIDATE_NAME"></div>
+      <div><label for="LANGUAGE">Language <span class="hint">summaries and Telegram messages</span></label>
+        <select id="LANGUAGE"><option value="en">English</option><option value="fr">French</option></select></div>
+    </div>
+    <h3 style="margin-top:18px">Area</h3>
+    <p class="hint">NAV ads are kept when their municipality is checked here, or their county is in the county list.</p>
+    <div id="areaGroups"></div>
+    <label for="areaExtra">Other municipalities <span class="hint">comma-separated, Norwegian names (e.g. Ringerike, Fredrikstad). Districts like Sandvika or Fornebu help for Finn locations.</span></label>
+    <input type="text" id="areaExtra">
+    <label for="areaCounties">Counties <span class="hint">comma-separated (default: Oslo, Akershus)</span></label>
+    <input type="text" id="areaCounties">
+    <label for="NAV_TOKEN">NAV private token <span class="hint">optional; empty = public token. <span id="NAV_TOKEN_state"></span></span></label>
+    <input type="password" id="NAV_TOKEN" autocomplete="off" placeholder="leave empty to keep the current value">
+    <div class="row"><button class="primary" onclick="saveSearch()">Save</button></div>
+    <div class="msg" id="searchMsg"></div>
+  </div>
+  <div class="card">
+    <h3>Profile</h3>
+    <p class="hint">Sent as-is to Claude at each run. Describe experience, target roles, sectors, languages and what to reject. Only facts from your CV. <span id="profileFrom"></span></p>
+    <textarea id="profile" spellcheck="true"></textarea>
+    <div class="row"><button class="primary" onclick="saveProfile()">Save profile</button></div>
+    <div class="msg" id="profileMsg"></div>
+  </div>
+</section>
+
+<section id="telegram">
+  <h2>Telegram</h2>
+  <p class="lead">The bot that sends you the ads, with Keep / Reject buttons.</p>
+  <div class="card">
+    <h3>1. Create your bot</h3>
+    <ol class="steps">
+      <li>In Telegram, open <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> and send <code>/newbot</code>.</li>
+      <li>Choose a name and a username ending in <code>bot</code>.</li>
+      <li>Copy the token it gives you and paste it below. Keep it private.</li>
+    </ol>
+    <label for="TELEGRAM_BOT_TOKEN">Bot token <span class="hint" id="TELEGRAM_BOT_TOKEN_state"></span></label>
+    <input type="password" id="TELEGRAM_BOT_TOKEN" autocomplete="off" placeholder="leave empty to keep the current value">
+    <div class="row"><button class="primary" onclick="saveFields(['TELEGRAM_BOT_TOKEN'], 'tgMsg1')">Save token</button></div>
+    <div class="msg" id="tgMsg1"></div>
+  </div>
+  <div class="card">
+    <h3>2. Link your chat</h3>
+    <ol class="steps">
+      <li>Open your bot in Telegram<span id="botLink"></span> and send it any message (e.g. "hello").</li>
+      <li>Click <b>Detect</b>, then <b>Use this chat</b> next to your name.</li>
+    </ol>
+    <label for="TELEGRAM_CHAT_ID">Chat id <span class="hint">only this chat is accepted by the tool</span></label>
+    <input type="text" id="TELEGRAM_CHAT_ID">
+    <div class="row">
+      <button onclick="detectChat()">Detect</button>
+      <button class="primary" onclick="saveFields(['TELEGRAM_CHAT_ID'], 'tgMsg2')">Save chat id</button>
+    </div>
+    <div id="chats"></div>
+    <div class="msg" id="tgMsg2"></div>
+  </div>
+  <div class="card">
+    <h3>3. Test</h3>
+    <div class="row"><button class="primary" onclick="testTelegram()">Send a test message</button></div>
+    <div class="msg" id="tgMsg3"></div>
+    <p class="hint" style="margin-top:12px">Don't run another program with the same bot token: it would read your clicks before this tool does.</p>
+  </div>
+</section>
+
+<section id="claude">
+  <h2>Claude</h2>
+  <p class="lead">The ads are sorted by Claude Code, with your Claude Pro or Max subscription (no API key).</p>
+  <div class="card">
+    <ul class="checks" id="claudeState"><li>Loading…</li></ul>
+    <div class="row"><button class="primary" id="claudeBtn" onclick="claudeLogin()">Log in</button>
+      <button onclick="refreshStatus()">Refresh</button></div>
+    <p class="hint" style="margin-top:12px">The button opens a PowerShell window: it installs Claude Code if needed (official installer from claude.ai), then opens the login in your browser. Close that window when it says you are logged in, then click Refresh. The login lasts several weeks; you get a Telegram warning 5 days before it expires.</p>
+  </div>
+</section>
+
+<section id="finn">
+  <h2>Finn alerts <span class="hint">(optional)</span></h2>
+  <p class="lead">Finn.no ads arrive through your own Finn alert emails, read from Gmail.</p>
+  <div class="card">
+    <h3>1. Create the alert on Finn</h3>
+    <ol class="steps">
+      <li>On <a href="https://www.finn.no/" target="_blank" rel="noopener">finn.no</a>, search jobs with your area and categories, then save the search as an alert (Søkeagent) sent by email.</li>
+      <li>Use the Gmail address below to receive it.</li>
+    </ol>
+    <p class="hint">The tool reads only those emails and never downloads finn.no pages: Finn's terms forbid automated access. Finn ads therefore show title, employer and place only; open the link to read them.</p>
+  </div>
+  <div class="card">
+    <h3>2. Connect Gmail</h3>
+    <ol class="steps">
+      <li>Turn on 2-step verification on your Google account.</li>
+      <li>Create an <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">app password</a> and paste it below (not your normal password).</li>
+    </ol>
+    <div class="grid2">
+      <div><label for="GMAIL_ADDRESS">Gmail address</label><input type="text" id="GMAIL_ADDRESS" autocomplete="off"></div>
+      <div><label for="GMAIL_APP_PASSWORD">App password <span class="hint" id="GMAIL_APP_PASSWORD_state"></span></label>
+        <input type="password" id="GMAIL_APP_PASSWORD" autocomplete="off" placeholder="leave empty to keep the current value"></div>
+    </div>
+    <label for="GMAIL_FINN_LABEL">Gmail label <span class="hint">optional; empty = INBOX</span></label>
+    <input type="text" id="GMAIL_FINN_LABEL">
+    <div class="row">
+      <button class="primary" onclick="saveFields(['GMAIL_ADDRESS','GMAIL_APP_PASSWORD','GMAIL_FINN_LABEL'], 'gmMsg')">Save</button>
+      <button onclick="testGmail()">Test connection</button>
+    </div>
+    <div class="msg" id="gmMsg"></div>
+  </div>
+</section>
+
+<section id="schedule">
+  <h2>Schedule</h2>
+  <p class="lead">Windows runs the tool every morning, and collects your Telegram clicks for a few hours after.</p>
+  <div class="card">
+    <h3>Current tasks</h3>
+    <div id="tasks">Loading…</div>
+  </div>
+  <div class="card">
+    <h3>Create or update</h3>
+    <div class="grid2">
+      <div><label for="tMorning">Morning run</label><input type="time" id="tMorning" value="07:30"></div>
+      <div><label for="tCatch">Click collection starts</label><input type="time" id="tCatch" value="07:40"></div>
+      <div><label for="tHours">Collection window <span class="hint">hours, every 10 min</span></label><input type="number" id="tHours" value="2.85" min="0.25" max="23" step="0.05"></div>
+      <div><label for="tPrefix">Task name prefix</label><input type="text" id="tPrefix" value="JobAlerts"></div>
+    </div>
+    <div class="row"><button class="primary" onclick="createTasks()">Create / update tasks</button></div>
+    <div class="msg" id="taskMsg"></div>
+    <p class="hint" style="margin-top:12px">Tasks run only while your Windows session is open (locked screen is fine; after a reboot, log in). If the computer was off at the morning time, the run starts as soon as possible.</p>
+  </div>
+</section>
+
+<section id="run">
+  <h2>Run now</h2>
+  <p class="lead">Start a run by hand, e.g. to test the setup.</p>
+  <div class="card">
+    <div class="row" style="margin-top:0">
+      <button class="primary" id="runFull" onclick="startRun('full')">Full run</button>
+      <button id="runCollect" onclick="startRun('collect')">Collect clicks only</button>
+    </div>
+    <p class="hint">A full run fetches new ads, sorts them with Claude (1-3 minutes) and sends the relevant ones to Telegram.</p>
+    <div class="msg" id="runMsg"></div>
+    <pre class="log" id="runLog">…</pre>
+  </div>
+</section>
+
+<section id="history">
+  <h2>History</h2>
+  <p class="lead">Ads sent to Telegram, with your decision and comments.</p>
+  <div class="card"><div class="stats" id="stats2"></div></div>
+  <div class="card"><div id="historyTable">Loading…</div></div>
+</section>
+
+</main>
+</div>
+<div id="toast"></div>
+
+<script>
+const TOKEN = "{{TOKEN}}";
+let settings = null, statusData = null, runTimer = null;
+
+async function api(path, body) {
+  const opt = { headers: { "X-Token": TOKEN } };
+  if (body !== undefined) { opt.method = "POST"; opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
+  const r = await fetch(path, opt);
+  let data;
+  try { data = await r.json(); } catch { throw new Error("HTTP " + r.status); }
+  if (!data.ok) throw new Error(data.error || ("HTTP " + r.status));
+  return data;
+}
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function toast(t) { const el = $("toast"); el.textContent = t; el.classList.add("show"); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove("show"), 2600); }
+function msg(id, kind, text) { const el = $(id); el.className = "msg " + kind; el.textContent = text; }
+async function busy(btn, fn) { if (btn) btn.disabled = true; try { return await fn(); } finally { if (btn) btn.disabled = false; } }
+
+// ---------- navigation ----------
+function show() {
+  const id = (location.hash || "#overview").slice(1);
+  document.querySelectorAll("section").forEach(s => s.classList.toggle("active", s.id === id));
+  document.querySelectorAll("nav a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#" + id));
+  if (id === "overview" || id === "claude" || id === "schedule") refreshStatus();
+  if (id === "history") loadHistory();
+  if (id === "run") pollRun();
+}
+window.addEventListener("hashchange", show);
+
+// ---------- settings ----------
+async function loadSettings() {
+  settings = await api("/api/settings");
+  for (const [k, v] of Object.entries(settings.values)) if ($(k) && k !== "LANGUAGE") $(k).value = v;
+  $("LANGUAGE").value = settings.values.LANGUAGE || "en";
+  for (const [k, set] of Object.entries(settings.secrets_set)) {
+    const st = $(k + "_state"); if (st) st.textContent = set ? "(saved)" : "(not set)";
+    if ($(k)) $(k).value = "";
+  }
+  const a = settings.area;
+  $("areaGroups").innerHTML = Object.entries(a.groups).map(([g, list]) => `
+    <div class="group-title">${esc(g)} <button type="button" onclick="toggleGroup('${esc(g)}', true)">all</button><button type="button" onclick="toggleGroup('${esc(g)}', false)">none</button></div>
+    <div class="muni">${list.map(m => `<label><input type="checkbox" data-group="${esc(g)}" value="${esc(m)}" ${a.selected.includes(m) ? "checked" : ""}> ${esc(title(m))}</label>`).join("")}</div>`).join("");
+  $("areaExtra").value = a.extra.map(title).join(", ");
+  $("areaCounties").value = a.counties.map(title).join(", ");
+}
+function title(s) { return s.toLowerCase().replace(/(^|[\s-])\S/g, c => c.toUpperCase()); }
+function toggleGroup(g, on) { document.querySelectorAll(`input[data-group="${g}"]`).forEach(c => c.checked = on); }
+
+async function saveSearch() {
+  const btn = event.target;
+  await busy(btn, async () => {
+    try {
+      const body = {
+        CANDIDATE_NAME: $("CANDIDATE_NAME").value, LANGUAGE: $("LANGUAGE").value, NAV_TOKEN: $("NAV_TOKEN").value,
+        area: {
+          municipalities: [...document.querySelectorAll("#areaGroups input:checked")].map(c => c.value),
+          extra: $("areaExtra").value,
+          counties: $("areaCounties").value.split(",").map(s => s.trim()).filter(Boolean),
+        },
+      };
+      await api("/api/settings", body);
+      await loadSettings();
+      msg("searchMsg", "ok", "Saved. The next run uses these settings.");
+    } catch (e) { msg("searchMsg", "bad", e.message); }
+  });
+}
+async function saveFields(keys, msgId) {
+  const btn = event.target;
+  await busy(btn, async () => {
+    try {
+      const body = {}; keys.forEach(k => body[k] = $(k).value);
+      await api("/api/settings", body);
+      await loadSettings();
+      msg(msgId, "ok", "Saved.");
+    } catch (e) { msg(msgId, "bad", e.message); }
+  });
+}
+
+// ---------- profile ----------
+async function loadProfile() {
+  const p = await api("/api/profile");
+  $("profile").value = p.text;
+  $("profileFrom").textContent = p.from_template ? "This is the template: replace the examples, then save." : "";
+}
+async function saveProfile() {
+  const btn = event.target;
+  await busy(btn, async () => {
+    try { await api("/api/profile", { text: $("profile").value }); msg("profileMsg", "ok", "Profile saved."); $("profileFrom").textContent = ""; }
+    catch (e) { msg("profileMsg", "bad", e.message); }
+  });
+}
+
+// ---------- Telegram ----------
+async function detectChat() {
+  const btn = event.target;
+  await busy(btn, async () => {
+    try {
+      const d = await api("/api/telegram/detect", {});
+      $("botLink").innerHTML = d.bot ? ` (<a href="https://t.me/${esc(d.bot)}" target="_blank" rel="noopener">@${esc(d.bot)}</a>)` : "";
+      if (!d.chats.length) { $("chats").innerHTML = ""; msg("tgMsg2", "info", `Bot @${d.bot} found, but no message yet. Send it a message in Telegram, then click Detect again.`); return; }
+      $("chats").innerHTML = "<table><tr><th>Name</th><th>Username</th><th>Chat id</th><th></th></tr>" + d.chats.map(c =>
+        `<tr><td>${esc(c.name)}</td><td>${c.username ? "@" + esc(c.username) : ""}</td><td>${esc(c.id)}</td><td><button onclick="useChat('${esc(c.id)}')">Use this chat</button></td></tr>`).join("") + "</table>";
+      msg("tgMsg2", "info", `Bot @${d.bot}: pick your own chat.`);
+    } catch (e) { msg("tgMsg2", "bad", e.message.includes("Unauthorized") ? "Telegram refused the token: save the right token in step 1." : e.message); }
+  });
+}
+async function useChat(id) {
+  try { await api("/api/settings", { TELEGRAM_CHAT_ID: id }); $("TELEGRAM_CHAT_ID").value = id; msg("tgMsg2", "ok", "Chat id saved. Now send a test message."); }
+  catch (e) { msg("tgMsg2", "bad", e.message); }
+}
+async function testTelegram() {
+  const btn = event.target;
+  await busy(btn, async () => {
+    try { await api("/api/telegram/test", {}); msg("tgMsg3", "ok", "Sent. Check Telegram."); }
+    catch (e) { msg("tgMsg3", "bad", e.message); }
+  });
+}
+
+// ---------- Gmail ----------
+async function testGmail() {
+  const btn = event.target;
+  await busy(btn, async () => {
+    msg("gmMsg", "info", "Connecting to Gmail…");
+    try {
+      const r = (await api("/api/gmail/test", {})).result;
+      msg("gmMsg", "ok", `Connected (${r.mailbox}). Last ${r.days} days: ${r.emails} Finn alert email(s), ${r.ads} ad(s), ${r.in_area} in your area.` +
+        (r.emails ? "" : " No Finn alert yet: check that the alert is sent to this address."));
+    } catch (e) { msg("gmMsg", "bad", e.message); }
+  });
+}
+
+// ---------- Claude ----------
+async function claudeLogin() {
+  try { await api("/api/claude/login", {}); toast("A PowerShell window opened: follow it, then click Refresh."); }
+  catch (e) { toast(e.message); }
+}
+
+// ---------- status ----------
+function li(state, what, text, link) {
+  return `<li><span class="dot ${state}"></span><span class="what">${esc(what)}</span><span>${text}</span>${link ? `<a class="go" href="#${link}">Open</a>` : ""}</li>`;
+}
+async function refreshStatus() {
+  try { statusData = await api("/api/status"); } catch (e) { $("checks").innerHTML = li("bad", "Dashboard", esc(e.message)); return; }
+  const s = statusData, c = s.claude;
+  const claudeLine = !c.installed ? ["bad", "Not installed"] : !c.logged_in ? ["bad", "Installed, not logged in"] :
+    (c.days_left != null && c.days_left < 5) ? ["warn", `Logged in, expires in ${c.days_left} day(s)`] :
+    ["ok", "Logged in" + (c.days_left != null ? `, expires in ${c.days_left} days` : "")];
+  const tg = s.telegram.token && s.telegram.chat_id ? ["ok", "Token and chat id saved (use Test to check)"] :
+    s.telegram.token ? ["warn", "Token saved, chat id missing"] : ["bad", "Not set up"];
+  const prof = !s.profile.exists ? ["bad", "Missing"] : s.profile.is_template ? ["warn", "Still the template"] : ["ok", "Filled in"];
+  const full = s.tasks.filter(t => t.kind === "full run"), coll = s.tasks.filter(t => t.kind === "catch-up");
+  const sched = s.tasks_error ? ["warn", "Could not read tasks: " + esc(s.tasks_error)] :
+    full.length ? ["ok", `Morning run at ${esc(full[0].start)}, next ${esc(full[0].next)}` + (coll.length ? "; click collection on" : "; no click collection")] :
+    ["bad", "No scheduled run"];
+  $("checks").innerHTML =
+    li(s.name ? "ok" : "warn", "Name", s.name ? "Set" : "Not set", "search") +
+    li(prof[0], "Profile", prof[1], "search") +
+    li(tg[0], "Telegram", tg[1], "telegram") +
+    li(claudeLine[0], "Claude", claudeLine[1], "claude") +
+    li(s.gmail.configured ? "ok" : "off", "Finn (Gmail)", s.gmail.configured ? "Configured (use Test to check)" : "Optional, not set up", "finn") +
+    li(sched[0], "Schedule", sched[1], "schedule");
+  const d = s.db || {};
+  const statsHtml = [["ads", "ads seen"], ["sorted", "sorted"], ["relevant", "relevant"], ["sent", "sent"], ["kept", "kept"], ["rejected", "rejected"]]
+    .map(([k, l]) => `<div class="stat"><b>${d[k] ?? 0}</b><span>${l}</span></div>`).join("");
+  $("stats").innerHTML = statsHtml; $("stats2").innerHTML = statsHtml;
+  $("lastRuns").textContent = s.last_runs.length ? s.last_runs.join("\n") : "No run yet.";
+  $("claudeState").innerHTML = li(claudeLine[0], "Status", esc(claudeLine[1])) +
+    (c.plan ? li("off", "Plan", esc(c.plan)) : "") + li("off", "Program", `<code>${esc(c.path)}</code>`);
+  $("claudeBtn").textContent = !c.installed ? "Install and log in" : c.logged_in ? "Log in again" : "Log in";
+  $("tasks").innerHTML = s.tasks_error ? `<p class="hint">${esc(s.tasks_error)}</p>` : !s.tasks.length ? "<p>No task yet. Create them below.</p>" :
+    "<table><tr><th>Task</th><th>Type</th><th>Starts</th><th>Repeats</th><th>Next run</th><th>Last run</th><th></th></tr>" +
+    s.tasks.map(t => `<tr><td>${esc(t.name)}</td><td>${esc(t.kind)}</td><td>${esc(t.start)}</td><td>${esc(t.every.replace("PT", "").toLowerCase())}</td><td>${esc(t.next)}</td><td>${esc(t.last)}${t.last ? (t.result === 0 ? " ✓" : ` (code ${esc(t.result)})`) : ""}</td>` +
+      `<td><button onclick="removeTask('${esc(t.name)}')">Remove</button></td></tr>`).join("") + "</table>";
+  if (full.length) $("tMorning").value = full[0].start;
+  if (coll.length) $("tCatch").value = coll[0].start;
+}
+
+// ---------- schedule ----------
+async function createTasks() {
+  const btn = event.target;
+  await busy(btn, async () => {
+    try {
+      await api("/api/tasks", { morning: $("tMorning").value, catchup_start: $("tCatch").value, catchup_hours: parseFloat($("tHours").value), prefix: $("tPrefix").value });
+      msg("taskMsg", "ok", "Tasks created or updated.");
+      await refreshStatus();
+      const names = statusData.tasks.map(t => t.name), p = $("tPrefix").value;
+      const others = names.filter(n => !n.startsWith(p + "-"));
+      if (others.length) msg("taskMsg", "info", `Done. Other tasks also run this tool: ${others.join(", ")}. Remove them if they are duplicates.`);
+    } catch (e) { msg("taskMsg", "bad", e.message); }
+  });
+}
+async function removeTask(name) {
+  if (!confirm(`Remove the scheduled task "${name}"?`)) return;
+  try { await api("/api/tasks/remove", { name }); toast("Task removed."); refreshStatus(); }
+  catch (e) { toast(e.message); }
+}
+
+// ---------- run ----------
+async function startRun(mode) {
+  if (mode === "full" && !confirm("Start a full run now? Relevant new ads will be sent to Telegram.")) return;
+  try { await api("/api/run", { mode }); msg("runMsg", "info", "Started…"); pollRun(); }
+  catch (e) { msg("runMsg", "bad", e.message); }
+}
+async function pollRun() {
+  clearTimeout(runTimer);
+  try {
+    const r = await api("/api/run");
+    $("runLog").textContent = r.log.join("\n") || "No log yet.";
+    $("runLog").scrollTop = $("runLog").scrollHeight;
+    $("runFull").disabled = $("runCollect").disabled = r.running;
+    if (r.running) { msg("runMsg", "info", `${r.mode === "collect" ? "Click collection" : "Full run"} in progress since ${r.started}…`); runTimer = setTimeout(pollRun, 2000); }
+    else if (r.exit_code === 0) msg("runMsg", "ok", "Run finished successfully.");
+    else if (r.exit_code != null) msg("runMsg", "bad", `Run failed (code ${r.exit_code}). See the log below.`);
+  } catch (e) { msg("runMsg", "bad", e.message); }
+}
+
+// ---------- history ----------
+async function loadHistory() {
+  try {
+    const rows = (await api("/api/history")).rows;
+    $("historyTable").innerHTML = !rows.length ? "<p>No ad sent yet.</p>" :
+      "<table><tr><th>Ad</th><th>Place</th><th>Score</th><th>Sent</th><th>Decision</th><th>Comments</th></tr>" + rows.map(r =>
+        `<tr><td><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a><br><span class="hint">${esc(r.employer)} · ${esc(r.source)}${r.norwegian_required ? " · Norwegian required" : ""}</span></td>` +
+        `<td>${esc(title(r.municipal || ""))}</td><td>${esc(r.score)}/5</td><td>${esc((r.sent_at || "").slice(0, 10))}</td>` +
+        `<td><span class="badge ${r.decision || "none"}">${r.decision === "keep" ? "Kept" : r.decision === "reject" ? "Rejected" : "None"}</span></td><td>${esc(r.notes || "")}</td></tr>`).join("") + "</table>";
+    if (!statusData) refreshStatus();
+  } catch (e) { $("historyTable").textContent = e.message; }
+}
+
+loadSettings().catch(e => toast(e.message));
+loadProfile().catch(e => toast(e.message));
+show();
+</script>
+</body>
+</html>
