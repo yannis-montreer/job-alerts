@@ -90,7 +90,7 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
   <a href="#overview">Overview</a>
   <a href="#search">You &amp; search</a>
   <a href="#telegram">Telegram</a>
-  <a href="#claude">Claude</a>
+  <a href="#ai">AI (Claude / Gemini)</a>
   <a href="#finn">Finn alerts</a>
   <a href="#schedule">Schedule</a>
   <a href="#run">Run now</a>
@@ -176,10 +176,40 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
   </div>
 </section>
 
-<section id="claude">
-  <h2>Claude</h2>
-  <p class="lead">The ads are sorted by Claude Code, with your Claude Pro or Max subscription (no API key).</p>
+<section id="ai">
+  <h2>AI</h2>
+  <p class="lead">The AI that reads each ad and sorts it against your profile, once a day.</p>
   <div class="card">
+    <h3>Which AI?</h3>
+    <label for="AI_PROVIDER">Sort ads with</label>
+    <select id="AI_PROVIDER">
+      <option value="claude">Claude (Claude Pro or Max subscription, no API key)</option>
+      <option value="gemini">Gemini (free API key from Google AI Studio)</option>
+    </select>
+    <div class="row"><button class="primary" onclick="saveFields(['AI_PROVIDER'], 'aiMsg')">Save</button></div>
+    <div class="msg" id="aiMsg"></div>
+  </div>
+  <div class="card" id="geminiCard">
+    <h3>Gemini</h3>
+    <ol class="steps">
+      <li>Open <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> and sign in with your Google account.</li>
+      <li>Create an API key and paste it below. Keep it private.</li>
+    </ol>
+    <p class="hint">A Gemini app subscription does not include an API key, but the free tier of the API is enough for one call a day. On the free tier, Google's terms allow it to use what is sent (your profile and the day's ads) to improve its products.</p>
+    <div class="grid2">
+      <div><label for="GEMINI_API_KEY">API key <span class="hint" id="GEMINI_API_KEY_state"></span></label>
+        <input type="password" id="GEMINI_API_KEY" autocomplete="off" placeholder="leave empty to keep the current value"></div>
+      <div><label for="GEMINI_MODEL">Model <span class="hint">empty = gemini-flash-latest</span></label>
+        <input type="text" id="GEMINI_MODEL" placeholder="gemini-flash-latest"></div>
+    </div>
+    <div class="row">
+      <button class="primary" onclick="saveFields(['GEMINI_API_KEY','GEMINI_MODEL'], 'gemMsg')">Save</button>
+      <button onclick="testGemini()">Test key</button>
+    </div>
+    <div class="msg" id="gemMsg"></div>
+  </div>
+  <div class="card" id="claudeCard">
+    <h3>Claude</h3>
     <ul class="checks" id="claudeState"><li>Loading…</li></ul>
     <div class="row"><button class="primary" id="claudeBtn" onclick="claudeLogin()">Log in</button>
       <button onclick="refreshStatus()">Refresh</button></div>
@@ -289,7 +319,7 @@ function show() {
   const id = (location.hash || "#overview").slice(1);
   document.querySelectorAll("section").forEach(s => s.classList.toggle("active", s.id === id));
   document.querySelectorAll("nav a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#" + id));
-  if (id === "overview" || id === "claude" || id === "schedule") refreshStatus();
+  if (id === "overview" || id === "ai" || id === "schedule") refreshStatus();
   if (id === "history") loadHistory();
   if (id === "run") pollRun();
 }
@@ -298,8 +328,9 @@ window.addEventListener("hashchange", show);
 // ---------- settings ----------
 async function loadSettings() {
   settings = await api("/api/settings");
-  for (const [k, v] of Object.entries(settings.values)) if ($(k) && k !== "LANGUAGE") $(k).value = v;
+  for (const [k, v] of Object.entries(settings.values)) if ($(k) && k !== "LANGUAGE" && k !== "AI_PROVIDER") $(k).value = v;
   $("LANGUAGE").value = settings.values.LANGUAGE || "en";
+  $("AI_PROVIDER").value = settings.values.AI_PROVIDER || "claude";
   for (const [k, set] of Object.entries(settings.secrets_set)) {
     const st = $(k + "_state"); if (st) st.textContent = set ? "(saved)" : "(not set)";
     if ($(k)) $(k).value = "";
@@ -339,6 +370,7 @@ async function saveFields(keys, msgId) {
       const body = {}; keys.forEach(k => body[k] = $(k).value);
       await api("/api/settings", body);
       await loadSettings();
+      if (keys.includes("AI_PROVIDER")) refreshStatus();
       msg(msgId, "ok", "Saved.");
     } catch (e) { msg(msgId, "bad", e.message); }
   });
@@ -397,7 +429,14 @@ async function testGmail() {
   });
 }
 
-// ---------- Claude ----------
+// ---------- AI ----------
+async function testGemini() {
+  const btn = event.target;
+  await busy(btn, async () => {
+    try { const r = (await api("/api/gemini/test", {})).result; msg("gemMsg", "ok", `Key accepted. Model: ${r.name} (${r.model}).`); }
+    catch (e) { msg("gemMsg", "bad", e.message); }
+  });
+}
 async function claudeLogin() {
   try { await api("/api/claude/login", {}); toast("A PowerShell window opened: follow it, then click Refresh."); }
   catch (e) { toast(e.message); }
@@ -424,7 +463,9 @@ async function refreshStatus() {
     li(s.name ? "ok" : "warn", "Name", s.name ? "Set" : "Not set", "search") +
     li(prof[0], "Profile", prof[1], "search") +
     li(tg[0], "Telegram", tg[1], "telegram") +
-    li(claudeLine[0], "Claude", claudeLine[1], "claude") +
+    (s.ai.provider === "gemini"
+      ? li(s.ai.gemini_key ? "ok" : "bad", "AI: Gemini", s.ai.gemini_key ? `API key saved, model ${esc(s.ai.gemini_model)} (use Test key to check)` : "API key missing", "ai")
+      : li(claudeLine[0], "AI: Claude", claudeLine[1], "ai")) +
     li(s.gmail.configured ? "ok" : "off", "Finn (Gmail)", s.gmail.configured ? "Configured (use Test to check)" : "Optional, not set up", "finn") +
     li(sched[0], "Schedule", sched[1], "schedule");
   const d = s.db || {};
@@ -435,6 +476,9 @@ async function refreshStatus() {
   $("claudeState").innerHTML = li(claudeLine[0], "Status", esc(claudeLine[1])) +
     (c.plan ? li("off", "Plan", esc(c.plan)) : "") + li("off", "Program", `<code>${esc(c.path)}</code>`);
   $("claudeBtn").textContent = !c.installed ? "Install and log in" : c.logged_in ? "Log in again" : "Log in";
+  // Show the chosen AI first; the other card stays available below.
+  const ai = $("ai"), first = s.ai.provider === "gemini" ? $("geminiCard") : $("claudeCard");
+  ai.insertBefore(first, ai.querySelector(".card").nextSibling);
   $("tasks").innerHTML = s.tasks_error ? `<p class="hint">${esc(s.tasks_error)}</p>` : !s.tasks.length ? "<p>No task yet. Create them below.</p>" :
     "<table><tr><th>Task</th><th>Type</th><th>Starts</th><th>Repeats</th><th>Next run</th><th>Last run</th><th></th></tr>" +
     s.tasks.map(t => `<tr><td>${esc(t.name)}</td><td>${esc(t.kind)}</td><td>${esc(t.start)}</td><td>${esc(t.every.replace("PT", "").toLowerCase())}</td><td>${esc(t.next)}</td><td>${esc(t.last)}${t.last ? (t.result === 0 ? " ✓" : ` (code ${esc(t.result)})`) : ""}</td>` +

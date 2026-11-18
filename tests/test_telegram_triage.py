@@ -1,3 +1,4 @@
+import pytest
 from conftest import add_ad
 
 from jobalerts import config, db, telegram, texts, triage
@@ -78,11 +79,94 @@ def test_triage_stores_results_and_retries_missing(con, tmp_path, monkeypatch):
     monkeypatch.setattr(config, "PROFILE_PATH", profile)
     add_ad(con, "a")
     add_ad(con, "b")
-    monkeypatch.setattr(triage, "call_claude", lambda prompt: [
-        dict(id=1, relevant=True, score=5, summary="Good.\nVery.", norwegian_required=False, reason="fit"),
+    monkeypatch.setattr(triage, "call_ai", lambda prompt: [
+        dict(id=1, relevant=True, score=9, summary="Good.\nVery.", norwegian_required=False, reason="fit"),
     ])
     assert triage.triage(con) == 1
     a = con.execute("SELECT * FROM ads WHERE uuid='a'").fetchone()
-    assert (a["relevant"], a["score"], a["summary_fr"]) == (1, 5, "Good.\nVery.")
+    assert (a["relevant"], a["score"], a["summary_fr"]) == (1, 5, "Good.\nVery.")  # score clamped to 5
     b = con.execute("SELECT triaged_at FROM ads WHERE uuid='b'").fetchone()
     assert b["triaged_at"] is None  # no result: retried at the next run
+
+
+# ---------- Gemini ----------
+
+class FakeResponse:
+    def __init__(self, status, data):
+        self.status_code, self._data = status, data
+        self.ok = 200 <= status < 300
+        self.text = str(data)
+
+    def json(self):
+        return self._data
+
+
+RESULTS = {"results": [dict(id=1, relevant=True, score=4, summary="a\nb", norwegian_required=False, reason="ok")]}
+
+
+def _gemini_answer(text):
+    return {"candidates": [{"content": {"parts": [{"text": text}]}}]}
+
+
+def test_call_ai_dispatches_on_provider(monkeypatch):
+    monkeypatch.setattr(triage, "call_claude", lambda p: "claude")
+    monkeypatch.setattr(triage, "call_gemini", lambda p: "gemini")
+    monkeypatch.setattr(config, "AI_PROVIDER", "gemini")
+    assert triage.call_ai("x") == "gemini"
+    monkeypatch.setattr(config, "AI_PROVIDER", "claude")
+    assert triage.call_ai("x") == "claude"
+
+
+def test_call_gemini_sends_key_in_header_and_schema(monkeypatch):
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "k-123")
+    monkeypatch.setattr(config, "GEMINI_MODEL", "gemini-flash-latest")
+    calls = []
+
+    def fake_post(url, headers, json, timeout):
+        calls.append((url, headers, json))
+        return FakeResponse(200, _gemini_answer('```json\n' + __import__("json").dumps(RESULTS) + '\n```'))
+
+    monkeypatch.setattr(triage.requests, "post", fake_post)
+    assert triage.call_gemini("prompt") == RESULTS["results"]
+    url, headers, body = calls[0]
+    assert url.endswith("/models/gemini-flash-latest:generateContent") and "k-123" not in url
+    assert headers["x-goog-api-key"] == "k-123"
+    assert body["generationConfig"]["responseFormat"]["text"]["schema"] == triage.SCHEMA
+    assert body["contents"][0]["parts"][0]["text"] == "prompt"
+
+
+def test_call_gemini_falls_back_to_older_fields(monkeypatch):
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "k")
+    bodies = []
+
+    def fake_post(url, headers, json, timeout):
+        bodies.append(json["generationConfig"])
+        if "responseFormat" in json["generationConfig"]:
+            return FakeResponse(400, {"error": {"message": 'Unknown name "responseFormat"'}})
+        return FakeResponse(200, _gemini_answer(__import__("json").dumps(RESULTS)))
+
+    monkeypatch.setattr(triage.requests, "post", fake_post)
+    assert triage.call_gemini("p") == RESULTS["results"]
+    assert bodies[1] == {"responseMimeType": "application/json", "responseJsonSchema": triage.SCHEMA}
+
+
+def test_call_gemini_errors_are_clear(monkeypatch):
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "k")
+    monkeypatch.setattr(triage.requests, "post", lambda *a, **kw: FakeResponse(
+        400, {"error": {"message": "API key not valid. Please pass a valid API key."}}))
+    with pytest.raises(RuntimeError, match="refused the API key"):
+        triage.call_gemini("p")
+    monkeypatch.setattr(triage.requests, "post", lambda *a, **kw: FakeResponse(
+        200, {"promptFeedback": {"blockReason": "SAFETY"}}))
+    with pytest.raises(RuntimeError, match="no answer .SAFETY"):
+        triage.call_gemini("p")
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "")
+    with pytest.raises(RuntimeError, match="GEMINI_API_KEY missing"):
+        triage.call_gemini("p")
+
+
+def test_check_gemini(monkeypatch):
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "k")
+    monkeypatch.setattr(triage.requests, "get", lambda url, headers, timeout: FakeResponse(
+        200, {"name": "models/gemini-flash-latest", "displayName": "Gemini Flash Latest"}))
+    assert triage.check_gemini()["name"] == "Gemini Flash Latest"

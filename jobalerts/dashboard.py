@@ -39,9 +39,9 @@ PYTHONW = ROOT / ".venv" / "Scripts" / "pythonw.exe"
 PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 DEFAULT_PORT = 8765
 
-SECRET_KEYS = {"TELEGRAM_BOT_TOKEN", "GMAIL_APP_PASSWORD", "NAV_TOKEN"}
+SECRET_KEYS = {"TELEGRAM_BOT_TOKEN", "GMAIL_APP_PASSWORD", "NAV_TOKEN", "GEMINI_API_KEY"}
 PLAIN_KEYS = {"CANDIDATE_NAME", "LANGUAGE", "TELEGRAM_CHAT_ID", "GMAIL_ADDRESS", "GMAIL_FINN_LABEL",
-              "TARGET_MUNICIPALITIES", "TARGET_COUNTIES"}
+              "TARGET_MUNICIPALITIES", "TARGET_COUNTIES", "AI_PROVIDER", "GEMINI_MODEL"}
 AREA_GROUPS = {
     "Oslo": ["OSLO"],
     "Akershus": sorted(config.AKERSHUS),
@@ -262,6 +262,10 @@ def save_settings():
             updates[k] = str(body[k]).strip()
     if "LANGUAGE" in updates and updates["LANGUAGE"] not in ("en", "fr"):
         raise UserError("Language must be en or fr")
+    if "AI_PROVIDER" in updates and updates["AI_PROVIDER"] not in ("claude", "gemini"):
+        raise UserError("AI must be claude or gemini")
+    if updates.get("GEMINI_MODEL") and not re.fullmatch(r"[a-z0-9][a-z0-9.\-]{1,60}", updates["GEMINI_MODEL"]):
+        raise UserError("Gemini model id looks wrong (e.g. gemini-flash-latest)")
     if updates.get("TELEGRAM_CHAT_ID") and not re.fullmatch(r"-?\d+", updates["TELEGRAM_CHAT_ID"]):
         raise UserError("The chat id is a number (use 'Detect' in the Telegram section)")
     for k in SECRET_KEYS:  # empty field = keep the current value; "clear" list = remove it
@@ -291,8 +295,11 @@ def status():
     except Exception as e:
         tasks, tasks_error = [], str(e)[:300]
     running = _run["proc"] is not None and _run["proc"].poll() is None
+    provider = (env.get("AI_PROVIDER") or "claude").lower()
     return jsonify(
         ok=True,
+        ai=dict(provider=provider, gemini_key=bool(env.get("GEMINI_API_KEY")),
+                gemini_model=env.get("GEMINI_MODEL") or "gemini-flash-latest"),
         claude=claude_status(),
         telegram=dict(token=bool(env.get("TELEGRAM_BOT_TOKEN")), chat_id=bool(env.get("TELEGRAM_CHAT_ID"))),
         gmail=dict(configured=bool(env.get("GMAIL_ADDRESS") and env.get("GMAIL_APP_PASSWORD"))),
@@ -330,6 +337,12 @@ def telegram_test():
 def gmail_test():
     reload_settings()
     return jsonify(ok=True, result=finn.check_connection())
+
+
+@app.post("/api/gemini/test")
+def gemini_test():
+    reload_settings()
+    return jsonify(ok=True, result=triage.check_gemini())
 
 
 @app.get("/api/profile")

@@ -48,6 +48,8 @@ def scrub(text: str) -> str:
 
 def check_claude_login():
     """Warn (once a day) when the CLI subscription login expires soon."""
+    if config.AI_PROVIDER != "claude":
+        return
     try:
         out = subprocess.run([str(triage.CLAUDE_EXE), "auth", "status"], capture_output=True,
                              text=True, encoding="utf-8", timeout=60).stdout
@@ -90,7 +92,7 @@ def run(collect_only: bool) -> int:
         finn_error = scrub(str(e))
         logging.error("Finn failed:\n%s", scrub(traceback.format_exc()))
 
-    # 3. Sorting: a single claude -p call (also picks up ads left unsorted).
+    # 3. Sorting: a single AI call (also picks up ads left unsorted).
     triage.triage(con)
 
     # 4. Send relevant ads (also picks up ads left unsent).

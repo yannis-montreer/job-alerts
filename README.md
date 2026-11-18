@@ -1,13 +1,14 @@
 # job-alerts
 
 A small Windows tool that watches job ads in Norway every morning, sorts them against your
-own profile with Claude, and sends the relevant ones to you on Telegram with **Keep** /
+own profile with Claude or Gemini, and sends the relevant ones to you on Telegram with **Keep** /
 **Reject** buttons. Your clicks and replies teach the sorting your preferences over time.
 
 - **Sources:** the public NAV / Arbeidsplassen feed (full ad text), and optionally Finn.no
   through your own Finn alert emails (title, employer and location only, see below).
-- **Sorting:** one `claude -p` call per run, using your Claude subscription (Pro or Max).
-  No API key, no keyword filter: Claude reads each ad and your profile.
+- **Sorting:** one AI call per run, no keyword filter: the AI reads each ad and your profile.
+  Either **Claude** (`claude -p` with your Claude Pro or Max subscription, no API key) or
+  **Gemini** (Gemini API with a free API key from Google AI Studio).
 - **Delivery:** a Telegram bot. No server or permanent process: the script runs from the
   Windows Task Scheduler.
 
@@ -17,7 +18,7 @@ own profile with Claude, and sends the relevant ones to you on Telegram with **K
 1. Reads your Telegram clicks and replies since the last run and stores them (SQLite).
 2. Fetches NAV ads published or changed in the last 24 h in your area (longer after missed runs, 7 days max).
 3. Reads new Finn alert emails, if configured.
-4. Sorts all new ads in one Claude call: relevant yes/no, score 1-5, 2-line summary,
+4. Sorts all new ads in one AI call: relevant yes/no, score 1-5, 2-line summary,
    "Norwegian required" flag. Your past decisions are given as examples.
 5. Sends the relevant ads to Telegram, or a short "nothing new today" message.
 
@@ -35,7 +36,10 @@ run picks up whatever was not sorted or sent.
 
 - Windows 10 or 11, on a computer that is on and logged in each morning.
 - Python 3.11 or newer.
-- A Claude Pro or Max subscription.
+- For the sorting, one of:
+  - a Claude Pro or Max subscription, or
+  - a Google account, to create a free Gemini API key. A Gemini app subscription alone does
+    not include an API key.
 - A Telegram account.
 - Optional, for Finn: a Gmail address that receives your Finn alerts.
 
@@ -56,7 +60,8 @@ that walks you through every step below, with a test button for each part:
 
 - **You & search:** name, language, area (municipality checkboxes) and your profile.
 - **Telegram:** save the bot token, detect your chat id, send a test message.
-- **Claude:** install and log in, see when the login expires.
+- **AI:** choose Claude or Gemini. Claude: install and log in, see when the login expires.
+  Gemini: save the API key and test it.
 - **Finn alerts:** Gmail address and app password, connection test.
 - **Schedule:** create, update or remove the scheduled tasks.
 - **Run now** and **History:** run by hand, see the log, see the ads sent and your decisions.
@@ -65,8 +70,20 @@ The dashboard only listens on this computer (`127.0.0.1`) and stops when you clo
 Secrets you type are saved to `.env` and never shown again. Steps 3 to 8 below describe the
 same setup by hand.
 
-### 3. Install Claude Code and log in with your subscription
-Install the standalone Claude Code CLI with the official installer, then log in:
+### 3. Set up the AI: Claude or Gemini
+
+**Option A, Gemini (API key).** Open [Google AI Studio](https://aistudio.google.com/apikey),
+create an API key, and put it in `.env`:
+```
+AI_PROVIDER=gemini
+GEMINI_API_KEY=your-key
+```
+`GEMINI_MODEL` is optional (default `gemini-flash-latest`). The free tier is enough for one
+call a day. On the free tier, Google's terms allow it to use what is sent (your profile and the
+day's ads) to improve its products; the paid tier does not.
+
+**Option B, Claude (subscription, default).** Keep `AI_PROVIDER=claude`. Install the standalone
+Claude Code CLI with the official installer, then log in:
 ```powershell
 irm https://claude.ai/install.ps1 | iex
 & "$env:USERPROFILE\.local\bin\claude.exe" auth login
@@ -92,7 +109,7 @@ read your clicks before the script does.
   your search area (`TARGET_MUNICIPALITIES`, `TARGET_COUNTIES`; default Oslo, Akershus,
   Drammen, Lier, Moss).
 - Copy `profile.example.md` to `profile.md` and describe yourself: experience, target roles,
-  sectors, languages, what to reject. This is what Claude sorts against, so be concrete.
+  sectors, languages, what to reject. This is what the AI sorts against, so be concrete.
 
 `.env` and `profile.md` are git-ignored and stay on your computer.
 
@@ -132,7 +149,7 @@ Run the morning task by hand: `Start-ScheduledTask JobAlerts-Morning`.
 | `jobalerts/run.py` | One run: clicks, sources, sorting, sending, error reporting |
 | `jobalerts/nav.py` | NAV feed (test alone: `python -m jobalerts.nav`) |
 | `jobalerts/finn.py` | Finn alert emails over IMAP |
-| `jobalerts/triage.py` | Sorting with `claude -p` (test alone: `python -m jobalerts.triage`) |
+| `jobalerts/triage.py` | Sorting with Claude or Gemini (test alone: `python -m jobalerts.triage`) |
 | `jobalerts/telegram.py` | Sending ads, reading clicks and replies |
 | `jobalerts/texts.py` | Telegram texts in English and French |
 | `jobalerts/config.py` | Paths, area, settings read from `.env` |
@@ -151,13 +168,13 @@ Run the morning task by hand: `Start-ScheduledTask JobAlerts-Morning`.
 .venv\Scripts\python.exe -m pytest
 ```
 The tests cover parsing, filtering, formatting, prompts and the dashboard's `.env` handling.
-They never call NAV, Telegram, Gmail or Claude. GitHub Actions runs them on Windows for every
+They never call NAV, Telegram, Gmail, Claude or Gemini. GitHub Actions runs them on Windows for every
 push and pull request.
 
 ## Notes
 
 - **NAV token:** the script uses NAV's public token, meant for trying the feed. For long-term
   use, ask NAV for a private token at nav.team.arbeidsplassen@nav.no and put it in `NAV_TOKEN`.
-- **Claude usage:** one call per morning, on your own subscription.
+- **AI usage:** one call per morning, on your own Claude subscription or Gemini API key.
 - **Privacy:** your profile, CV, ads, decisions and logs stay on your computer. The profile and
-  the day's ads are sent to Claude for sorting; ads and your clicks go through Telegram.
+  the day's ads are sent to the AI you chose for sorting; ads and your clicks go through Telegram.

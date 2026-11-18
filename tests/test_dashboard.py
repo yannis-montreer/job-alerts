@@ -71,6 +71,16 @@ def test_save_settings_area_and_secrets(client, env_file):
     assert values["TARGET_COUNTIES"] == "OSLO"
 
 
+def test_save_gemini_settings(client, env_file):
+    r = client.post("/api/settings", base_url=BASE, headers=H, json={
+        "AI_PROVIDER": "gemini", "GEMINI_API_KEY": "AIza-test", "GEMINI_MODEL": "gemini-3.8-flash"})
+    assert r.status_code == 200
+    values = dotenv_values(env_file)
+    assert (values["AI_PROVIDER"], values["GEMINI_API_KEY"], values["GEMINI_MODEL"]) == ("gemini", "AIza-test", "gemini-3.8-flash")
+    data = client.get("/api/settings", base_url=BASE, headers=H).get_json()
+    assert data["secrets_set"]["GEMINI_API_KEY"] is True and "AIza-test" not in str(data)
+
+
 def test_default_area_is_stored_empty(client, env_file):
     defaults = sorted(dashboard.DEFAULT_MUNICIPALITIES)
     r = client.post("/api/settings", base_url=BASE, headers=H, json={
@@ -82,6 +92,8 @@ def test_default_area_is_stored_empty(client, env_file):
 
 @pytest.mark.parametrize("body, error", [
     ({"LANGUAGE": "de"}, "Language"),
+    ({"AI_PROVIDER": "chatgpt"}, "claude or gemini"),
+    ({"GEMINI_MODEL": "bad model!"}, "model id"),
     ({"TELEGRAM_CHAT_ID": "abc"}, "chat id"),
     ({"area": {"municipalities": [], "extra": "", "counties": []}}, "municipality"),
 ])

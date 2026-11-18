@@ -15,6 +15,11 @@ PROFILE_PATH = ROOT / "profile.md"  # your search profile, copied from profile.e
 CANDIDATE_NAME = os.getenv("CANDIDATE_NAME", "").strip() or "the candidate"
 LANGUAGE = (os.getenv("LANGUAGE", "en").strip().lower() or "en")
 
+# AI used to sort the ads: "claude" (Claude Code CLI, subscription login) or "gemini" (API key).
+AI_PROVIDER = (os.getenv("AI_PROVIDER", "claude").strip().lower() or "claude")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "").strip() or "gemini-flash-latest"
+
 NAV_BASE = "https://pam-stilling-feed.nav.no"
 NAV_TOKEN = os.getenv("NAV_TOKEN", "").strip()
 

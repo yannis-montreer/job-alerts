@@ -21,6 +21,9 @@ TEST_ENV = {
     "GMAIL_ADDRESS": "",
     "GMAIL_APP_PASSWORD": "",
     "GMAIL_FINN_LABEL": "",
+    "AI_PROVIDER": "claude",
+    "GEMINI_API_KEY": "",
+    "GEMINI_MODEL": "",
 }
 os.environ.update(TEST_ENV)
 

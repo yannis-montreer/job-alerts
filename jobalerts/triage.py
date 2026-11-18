@@ -1,19 +1,27 @@
-"""Sorts new ads with ONE `claude -p` call per run (Claude subscription login, no API key).
+"""Sorts new ads with ONE AI call per run.
+
+AI_PROVIDER in .env picks the AI:
+- claude (default): `claude -p`, with the Claude subscription login (no API key)
+- gemini: the Gemini API, with a GEMINI_API_KEY from Google AI Studio
 
 Run alone to sort pending ads and print the relevant ones:  python -m jobalerts.triage
 """
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
+
+import requests
 
 from . import config, db, texts
 
 log = logging.getLogger(__name__)
 
 CLAUDE_EXE = Path.home() / ".local" / "bin" / "claude.exe"
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 MAX_DESC_CHARS = 2500
 MAX_EXAMPLES = 25  # per category (kept / rejected / comments)
 TIMEOUT_S = 600
@@ -129,14 +137,88 @@ def call_claude(prompt: str) -> list[dict]:
     return structured["results"]
 
 
+# ---------- Gemini ----------
+
+def _gemini_headers() -> dict:
+    key = config.GEMINI_API_KEY
+    if not key:
+        raise RuntimeError("GEMINI_API_KEY missing in .env (create one in Google AI Studio)")
+    return {"x-goog-api-key": key, "Content-Type": "application/json"}  # key in a header, never in the URL
+
+
+def _gemini_error(r: requests.Response) -> RuntimeError:
+    try:
+        detail = r.json().get("error", {}).get("message", "")
+    except ValueError:
+        detail = r.text
+    if r.status_code in (401, 403) or "API key" in detail:
+        return RuntimeError(f"Gemini refused the API key (HTTP {r.status_code}): {detail[:300]}")
+    if r.status_code == 404:
+        return RuntimeError(f"Gemini model not found: {config.GEMINI_MODEL} (set GEMINI_MODEL): {detail[:300]}")
+    if r.status_code == 429:
+        return RuntimeError(f"Gemini quota exceeded (HTTP 429), retried at the next run: {detail[:300]}")
+    return RuntimeError(f"Gemini error (HTTP {r.status_code}): {detail[:400]}")
+
+
+def _gemini_text(data: dict) -> str:
+    cands = data.get("candidates") or []
+    if not cands:
+        reason = (data.get("promptFeedback") or {}).get("blockReason", "no answer")
+        raise RuntimeError(f"Gemini returned no answer ({reason})")
+    parts = (cands[0].get("content") or {}).get("parts") or []
+    text = "".join(p.get("text", "") for p in parts).strip()
+    # Tolerate a ```json fence around the JSON.
+    return re.sub(r"^```(?:json)?\s*|\s*```$", "", text)
+
+
+def call_gemini(prompt: str) -> list[dict]:
+    url = f"{GEMINI_BASE}/models/{config.GEMINI_MODEL}:generateContent"
+    contents = [{"role": "user", "parts": [{"text": prompt}]}]
+    # Current REST format, then the older field names if this API version rejects it.
+    configs = [
+        {"responseFormat": {"text": {"mimeType": "APPLICATION_JSON", "schema": SCHEMA}}},
+        {"responseMimeType": "application/json", "responseJsonSchema": SCHEMA},
+    ]
+    for i, gen in enumerate(configs):
+        r = requests.post(url, headers=_gemini_headers(), json={"contents": contents, "generationConfig": gen},
+                          timeout=TIMEOUT_S)
+        if r.status_code == 400 and i + 1 < len(configs) and "API key" not in r.text:
+            log.info("Gemini: structured-output format rejected, trying the older field names")
+            continue
+        if not r.ok:
+            raise _gemini_error(r)
+        break
+    try:
+        return json.loads(_gemini_text(r.json()))["results"]
+    except (ValueError, KeyError, TypeError) as e:
+        raise RuntimeError(f"Gemini answer is not the expected JSON: {e}") from None
+
+
+def check_gemini() -> dict:
+    """Setup check: is the key accepted and the model available? (no generation, no quota used)"""
+    r = requests.get(f"{GEMINI_BASE}/models/{config.GEMINI_MODEL}", headers=_gemini_headers(), timeout=30)
+    if not r.ok:
+        raise _gemini_error(r)
+    data = r.json()
+    return dict(model=config.GEMINI_MODEL, name=data.get("displayName") or data.get("name"))
+
+
+def call_ai(prompt: str) -> list[dict]:
+    if config.AI_PROVIDER == "gemini":
+        return call_gemini(prompt)
+    if config.AI_PROVIDER != "claude":
+        raise RuntimeError(f"Unknown AI_PROVIDER: {config.AI_PROVIDER} (use claude or gemini)")
+    return call_claude(prompt)
+
+
 def triage(con) -> int:
     """Sort every ad not sorted yet, in a single claude call. Return how many were sorted."""
     ads = con.execute("SELECT * FROM ads WHERE triaged_at IS NULL ORDER BY first_seen").fetchall()
     if not ads:
         log.info("Sorting: nothing to sort")
         return 0
-    log.info("Sorting: %d ad(s) sent to claude -p", len(ads))
-    results = call_claude(build_prompt(con, ads))
+    log.info("Sorting: %d ad(s) sent to %s", len(ads), config.AI_PROVIDER)
+    results = call_ai(build_prompt(con, ads))
     by_id = {r["id"]: r for r in results}
     done = 0
     for i, ad in enumerate(ads, 1):
@@ -144,11 +226,12 @@ def triage(con) -> int:
         if r is None:
             log.warning("No result for ad %d (%s): retried at the next run", i, ad["title"])
             continue
+        score = min(5, max(1, int(r["score"])))  # in case the AI ignores the schema bounds
         con.execute(
             "UPDATE ads SET triaged_at=?, relevant=?, score=?, summary_fr=?, norwegian_required=? WHERE uuid=?",
-            (db.now_iso(), int(r["relevant"]), r["score"], r["summary"], int(r["norwegian_required"]), ad["uuid"]),
+            (db.now_iso(), int(r["relevant"]), score, r["summary"], int(r["norwegian_required"]), ad["uuid"]),
         )
-        log.info("  [%s] %d/5 %s | %s", "YES" if r["relevant"] else "no", r["score"], ad["title"], r.get("reason", ""))
+        log.info("  [%s] %d/5 %s | %s", "YES" if r["relevant"] else "no", score, ad["title"], r.get("reason", ""))
         done += 1
     con.commit()
     return done
