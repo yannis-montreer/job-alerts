@@ -88,7 +88,8 @@ def test_fetch_descriptions_is_slow_capped_and_identified(con, monkeypatch):
                           description=finn.LIMITED_INFO))
     stats = finn.fetch_descriptions(con, ads)
     assert stats == dict(fetched=1, failed=1, skipped=1)
-    assert session.urls == ["https://www.finn.no/1", "https://www.finn.no/2"]  # cap: third not fetched
+    # final address directly (no redirect), one request per ad; cap: third not fetched
+    assert session.urls == ["https://www.finn.no/job/ad/1", "https://www.finn.no/job/ad/2"]
     assert sleeps == [finn.config.FINN_DELAY_S] and finn.config.FINN_DELAY_S >= 5
     assert "me@example.org" in session.headers["User-Agent"]
     rows = {r["uuid"]: r["description"] for r in con.execute("SELECT uuid, description FROM ads")}

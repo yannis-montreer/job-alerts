@@ -224,6 +224,12 @@ def extract_description(page_html: str) -> str | None:
     return None
 
 
+def page_url(ad) -> str:
+    """The ad page itself. The alert link (finn.no/<code>) only redirects here, so asking for
+    this address directly makes one request per ad instead of two."""
+    return f"https://www.finn.no/job/ad/{ad['uuid'].removeprefix('finn:')}"
+
+
 def fetch_descriptions(con, ads: list[dict]) -> dict:
     """Download each new ad page once, slowly, and store its description. Failures keep the preview."""
     stats = dict(fetched=0, failed=0, skipped=0)
@@ -236,11 +242,11 @@ def fetch_descriptions(con, ads: list[dict]) -> dict:
         if i:
             time.sleep(config.FINN_DELAY_S)
         try:
-            r = session.get(ad["url"], timeout=30)
+            r = session.get(page_url(ad), timeout=30)
             r.raise_for_status()
             text = extract_description(r.text)
         except requests.RequestException as e:
-            log.warning("Finn page %s: %s", ad["url"], e)
+            log.warning("Finn page %s: %s", page_url(ad), e)
             text = None
         if not text:
             stats["failed"] += 1
