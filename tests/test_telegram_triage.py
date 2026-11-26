@@ -27,6 +27,44 @@ def test_format_offer_escapes_html():
     assert "limited preview" not in telegram.format_offer(ad)
 
 
+def _sorted_ad(con, uuid, score, norwegian=0):
+    add_ad(con, uuid, title=f"Job {uuid}")
+    con.execute("UPDATE ads SET triaged_at='x', relevant=1, score=?, norwegian_required=?, summary_fr='s' WHERE uuid=?",
+                (score, norwegian, uuid))
+    con.commit()
+
+
+def test_send_offers_messages_digest_and_norwegian(con, monkeypatch):
+    for uuid, score, no in (("a", 5, 0), ("b", 4, 0), ("c", 3, 0), ("d", 3, 1), ("e", 2, 0), ("f", 4, 1)):
+        _sorted_ad(con, uuid, score, no)
+    sent = []
+
+    def fake_api(method, **params):
+        sent.append(params)
+        return {"message_id": len(sent)}
+
+    monkeypatch.setattr(telegram, "api", fake_api)
+    monkeypatch.setattr(config, "NORWEGIAN_REQUIRED", "reject")
+    assert telegram.send_offers(con) == 3  # a, b as messages + c in the digest
+    assert [("reply_markup" in p) for p in sent] == [True, True, False]
+    digest = sent[2]["text"]
+    assert "Also possible today (1)" in digest and "Job c" in digest
+    assert "Job d" not in digest and "Job f" not in "".join(p["text"] for p in sent)
+    unsent = {r["uuid"] for r in con.execute("SELECT uuid FROM ads WHERE sent_at IS NULL")}
+    assert unsent == {"d", "e", "f"}  # Norwegian-required and score 2 are never sent
+    # nothing is sent twice
+    sent.clear()
+    assert telegram.send_offers(con) == 0 and not sent
+
+
+def test_send_offers_flag_mode_keeps_norwegian(con, monkeypatch):
+    _sorted_ad(con, "n", 4, 1)
+    sent = []
+    monkeypatch.setattr(telegram, "api", lambda method, **p: sent.append(p) or {"message_id": 1})
+    assert telegram.send_offers(con) == 1
+    assert "Norwegian required" in sent[0]["text"]
+
+
 def test_collect_updates_stores_clicks_and_replies(con, monkeypatch):
     add_ad(con, "u1")
     con.execute("INSERT INTO sent_messages(message_id, uuid, sent_at) VALUES(7, 'u1', 'x')")

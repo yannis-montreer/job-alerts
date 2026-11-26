@@ -10,6 +10,7 @@ TEXTS = {
         "norwegian": "🇳🇴 <b>Norwegian required</b>",
         "finn_limited": "ℹ️ Finn: limited preview (no description), open the link",
         "see_ad": "View the ad",
+        "digest_title": "📋 <b>Also possible today ({n})</b>, weaker matches, no buttons:",
         "none_today": "No new relevant ads today ({n} ad(s) analysed).",
         "finn_failed": "⚠️ Finn source failed (NAV and sorting OK): {err}",
         "login_expiry": "⚠️ The Claude login on this computer expires in {days} day(s). "
@@ -24,6 +25,7 @@ TEXTS = {
         "norwegian": "🇳🇴 <b>Norvégien demandé</b>",
         "finn_limited": "ℹ️ Finn : aperçu limité (pas de description), ouvre le lien",
         "see_ad": "Voir l'offre",
+        "digest_title": "📋 <b>Aussi possible aujourd'hui ({n})</b>, correspondances plus faibles, sans boutons :",
         "none_today": "Aucune nouvelle offre pertinente aujourd'hui ({n} annonce(s) analysée(s)).",
         "finn_failed": "⚠️ Source Finn en échec (NAV et tri OK) : {err}",
         "login_expiry": "⚠️ Le login Claude de cet ordinateur expire dans {days} jour(s). "

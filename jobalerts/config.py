@@ -15,6 +15,21 @@ PROFILE_PATH = ROOT / "profile.md"  # your search profile, copied from profile.e
 CANDIDATE_NAME = os.getenv("CANDIDATE_NAME", "").strip() or "the candidate"
 LANGUAGE = (os.getenv("LANGUAGE", "en").strip().lower() or "en")
 
+def _env_int(name: str, default: int, low: int, high: int) -> int:
+    try:
+        return min(high, max(low, int(os.getenv(name, "").strip() or default)))
+    except ValueError:
+        return default
+
+
+# What reaches Telegram:
+# - ads scored MESSAGE_MIN_SCORE or more: one message each, with Keep / Reject buttons
+# - ads scored DIGEST_MIN_SCORE up to MESSAGE_MIN_SCORE - 1: one short daily list
+# - NORWEGIAN_REQUIRED=reject drops ads that require Norwegian; "flag" sends them with a flag
+MESSAGE_MIN_SCORE = _env_int("MESSAGE_MIN_SCORE", 4, 1, 5)
+DIGEST_MIN_SCORE = _env_int("DIGEST_MIN_SCORE", 3, 1, 5)
+NORWEGIAN_REQUIRED = "reject" if os.getenv("NORWEGIAN_REQUIRED", "").strip().lower() == "reject" else "flag"
+
 # AI used to sort the ads: "claude" (Claude Code CLI, subscription login) or "gemini" (API key).
 AI_PROVIDER = (os.getenv("AI_PROVIDER", "claude").strip().lower() or "claude")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()

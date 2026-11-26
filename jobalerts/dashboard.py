@@ -42,7 +42,8 @@ DEFAULT_PORT = 8765
 SECRET_KEYS = {"TELEGRAM_BOT_TOKEN", "GMAIL_APP_PASSWORD", "NAV_TOKEN", "GEMINI_API_KEY"}
 PLAIN_KEYS = {"CANDIDATE_NAME", "LANGUAGE", "TELEGRAM_CHAT_ID", "GMAIL_ADDRESS", "GMAIL_FINN_LABEL",
               "TARGET_MUNICIPALITIES", "TARGET_COUNTIES", "AI_PROVIDER", "GEMINI_MODEL",
-              "FINN_FETCH_PAGES", "FINN_CONTACT_EMAIL"}
+              "FINN_FETCH_PAGES", "FINN_CONTACT_EMAIL",
+              "NORWEGIAN_REQUIRED", "MESSAGE_MIN_SCORE", "DIGEST_MIN_SCORE"}
 AREA_GROUPS = {
     "Oslo": ["OSLO"],
     "Akershus": sorted(config.AKERSHUS),
@@ -267,6 +268,14 @@ def save_settings():
         raise UserError("AI must be claude or gemini")
     if updates.get("GEMINI_MODEL") and not re.fullmatch(r"[a-z0-9][a-z0-9.\-]{1,60}", updates["GEMINI_MODEL"]):
         raise UserError("Gemini model id looks wrong (e.g. gemini-flash-latest)")
+    if "NORWEGIAN_REQUIRED" in updates and updates["NORWEGIAN_REQUIRED"] not in ("flag", "reject"):
+        raise UserError("Norwegian-required ads: flag or reject")
+    for k in ("MESSAGE_MIN_SCORE", "DIGEST_MIN_SCORE"):
+        if k in updates and updates[k] not in ("1", "2", "3", "4", "5"):
+            raise UserError("Scores go from 1 to 5")
+    if "MESSAGE_MIN_SCORE" in updates and "DIGEST_MIN_SCORE" in updates \
+            and int(updates["DIGEST_MIN_SCORE"]) > int(updates["MESSAGE_MIN_SCORE"]):
+        raise UserError("The digest minimum must not be above the message minimum")
     if "FINN_FETCH_PAGES" in updates:
         updates["FINN_FETCH_PAGES"] = "true" if updates["FINN_FETCH_PAGES"].lower() in ("1", "true", "yes", "on") else "false"
     if updates.get("FINN_CONTACT_EMAIL") and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", updates["FINN_CONTACT_EMAIL"]):

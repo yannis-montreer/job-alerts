@@ -21,7 +21,12 @@ own profile with Claude or Gemini, and sends the relevant ones to you on Telegra
 3. Reads new Finn alert emails, if configured.
 4. Sorts all new ads in one AI call: relevant yes/no, score 1-5, 2-line summary,
    "Norwegian required" flag. Your past decisions are given as examples.
-5. Sends the relevant ads to Telegram, or a short "nothing new today" message.
+5. Sends the relevant ads to Telegram, or a short "nothing new today" message:
+   - strong matches (score 4-5 by default) as one message each, with Keep / Reject buttons;
+   - weaker matches (score 3 by default) in **one short daily list**, one line per ad;
+   - ads that require Norwegian are flagged, or dropped with `NORWEGIAN_REQUIRED=reject`.
+   Set `MESSAGE_MIN_SCORE`, `DIGEST_MIN_SCORE` and `NORWEGIAN_REQUIRED` in `.env` or in the
+   dashboard to get fewer or more ads.
 
 `python -m jobalerts.run --collect-only` only reads your clicks. It runs every 10 minutes
 in the morning (07:40-10:30) so the ✔ appears on the button you chose. A click outside that

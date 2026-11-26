@@ -117,6 +117,16 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
       <div><label for="LANGUAGE">Language <span class="hint">summaries and Telegram messages</span></label>
         <select id="LANGUAGE"><option value="en">English</option><option value="fr">French</option></select></div>
     </div>
+    <h3 style="margin-top:18px">What reaches Telegram</h3>
+    <div class="grid2">
+      <div><label for="MESSAGE_MIN_SCORE">Own message, with buttons, from score</label>
+        <select id="MESSAGE_MIN_SCORE"><option>5</option><option>4</option><option>3</option><option>2</option></select></div>
+      <div><label for="DIGEST_MIN_SCORE">Daily digest list, from score <span class="hint">below the message score</span></label>
+        <select id="DIGEST_MIN_SCORE"><option>5</option><option>4</option><option>3</option><option>2</option></select></div>
+      <div><label for="NORWEGIAN_REQUIRED">Ads that require Norwegian</label>
+        <select id="NORWEGIAN_REQUIRED"><option value="flag">Send them, with a flag</option><option value="reject">Don't send them</option></select></div>
+    </div>
+    <p class="hint">Fewer, better ads: e.g. messages from 4, digest from 3. Set the digest equal to the message score to have no digest.</p>
     <h3 style="margin-top:18px">Area</h3>
     <p class="hint">NAV ads are kept when their municipality is checked here, or their county is in the county list.</p>
     <div id="areaGroups"></div>
@@ -345,6 +355,9 @@ async function loadSettings() {
   $("FINN_FETCH_PAGES").checked = ["1", "true", "yes", "on"].includes((settings.values.FINN_FETCH_PAGES || "").toLowerCase());
   $("LANGUAGE").value = settings.values.LANGUAGE || "en";
   $("AI_PROVIDER").value = settings.values.AI_PROVIDER || "claude";
+  $("MESSAGE_MIN_SCORE").value = settings.values.MESSAGE_MIN_SCORE || "4";
+  $("DIGEST_MIN_SCORE").value = settings.values.DIGEST_MIN_SCORE || "3";
+  $("NORWEGIAN_REQUIRED").value = settings.values.NORWEGIAN_REQUIRED || "flag";
   for (const [k, set] of Object.entries(settings.secrets_set)) {
     const st = $(k + "_state"); if (st) st.textContent = set ? "(saved)" : "(not set)";
     if ($(k)) $(k).value = "";
@@ -365,6 +378,8 @@ async function saveSearch() {
     try {
       const body = {
         CANDIDATE_NAME: $("CANDIDATE_NAME").value, LANGUAGE: $("LANGUAGE").value, NAV_TOKEN: $("NAV_TOKEN").value,
+        MESSAGE_MIN_SCORE: $("MESSAGE_MIN_SCORE").value, DIGEST_MIN_SCORE: $("DIGEST_MIN_SCORE").value,
+        NORWEGIAN_REQUIRED: $("NORWEGIAN_REQUIRED").value,
         area: {
           municipalities: [...document.querySelectorAll("#areaGroups input:checked")].map(c => c.value),
           extra: $("areaExtra").value,

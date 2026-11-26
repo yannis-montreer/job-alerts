@@ -26,6 +26,9 @@ TEST_ENV = {
     "GEMINI_MODEL": "",
     "FINN_FETCH_PAGES": "false",
     "FINN_CONTACT_EMAIL": "",
+    "MESSAGE_MIN_SCORE": "4",
+    "DIGEST_MIN_SCORE": "3",
+    "NORWEGIAN_REQUIRED": "flag",
 }
 os.environ.update(TEST_ENV)
 

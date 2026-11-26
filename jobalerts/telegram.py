@@ -13,7 +13,7 @@ import sys
 
 import requests
 
-from . import db, finn
+from . import config, db, finn
 from .texts import t
 
 log = logging.getLogger(__name__)
@@ -76,12 +76,29 @@ def format_offer(ad) -> str:
     return "\n".join(lines)
 
 
+def pending_ads(con) -> tuple[list, list]:
+    """Relevant ads not sent yet: (one message each, digest lines), following the settings."""
+    sql = "SELECT * FROM ads WHERE relevant=1 AND sent_at IS NULL AND score >= ?"
+    if config.NORWEGIAN_REQUIRED == "reject":
+        sql += " AND NOT coalesce(norwegian_required, 0)"
+    ads = con.execute(sql + " ORDER BY score DESC, first_seen", (config.DIGEST_MIN_SCORE,)).fetchall()
+    full = [a for a in ads if a["score"] >= config.MESSAGE_MIN_SCORE]
+    digest = [a for a in ads if a["score"] < config.MESSAGE_MIN_SCORE]
+    return full, digest
+
+
+def format_digest_line(ad) -> str:
+    e = html.escape
+    flag = " 🇳🇴" if ad["norwegian_required"] else ""
+    return (f'• <a href="{e(ad["url"] or "", quote=True)}">{e(ad["title"] or "")}</a>'
+            f' · {e(ad["employer"] or "?")} · {e((ad["municipal"] or "?").title())} · {ad["score"]}/5{flag}')
+
+
 def send_offers(con) -> int:
-    ads = con.execute(
-        "SELECT * FROM ads WHERE relevant=1 AND sent_at IS NULL ORDER BY score DESC, first_seen"
-    ).fetchall()
+    """Send the pending ads. Returns how many ads were sent (messages + digest lines)."""
+    full, digest = pending_ads(con)
     sent = 0
-    for ad in ads:
+    for ad in full:
         msg = api(
             "sendMessage", chat_id=chat_id(), text=format_offer(ad), parse_mode="HTML",
             link_preview_options={"is_disabled": True}, reply_markup=keyboard(ad["uuid"]),
@@ -91,8 +108,28 @@ def send_offers(con) -> int:
         con.execute("UPDATE ads SET sent_at=? WHERE uuid=?", (db.now_iso(), ad["uuid"]))
         con.commit()  # commit after each send: never send twice
         sent += 1
-    log.info("Telegram: %d ad(s) sent", sent)
+    # The digest: one short list, split only if it exceeds Telegram's 4096-character limit.
+    chunk, chunk_ads = [t("digest_title", n=len(digest))], []
+    for i, ad in enumerate(digest):
+        line = format_digest_line(ad)
+        if len("\n".join(chunk + [line])) > 3900:
+            sent += _send_digest(con, chunk, chunk_ads)
+            chunk, chunk_ads = [], []
+        chunk.append(line)
+        chunk_ads.append(ad)
+    if chunk_ads:
+        sent += _send_digest(con, chunk, chunk_ads)
+    log.info("Telegram: %d message(s), %d in the digest", len(full), len(digest))
     return sent
+
+
+def _send_digest(con, lines, ads) -> int:
+    api("sendMessage", chat_id=chat_id(), text="\n".join(lines), parse_mode="HTML",
+        link_preview_options={"is_disabled": True})
+    now = db.now_iso()
+    con.executemany("UPDATE ads SET sent_at=? WHERE uuid=?", [(now, a["uuid"]) for a in ads])
+    con.commit()
+    return len(ads)
 
 
 def send_text(text: str):
