@@ -58,6 +58,13 @@ def test_extract_description_from_json_ld():
     assert finn.extract_description("<html>no structured data</html>") is None
 
 
+def test_extract_description_finn_wrapper():
+    # Real Finn pages wrap the JobPosting in a "script:ld+json" key.
+    page = ('<script type="application/ld+json">{"script:ld+json": {"@context": "https://schema.org", '
+            '"@type": "JobPosting", "description": "<p>Selge B2B-løsninger til bedriftskunder i hele Østlandet.</p>"}}</script>')
+    assert finn.extract_description(page) == "Selge B2B-løsninger til bedriftskunder i hele Østlandet."
+
+
 class FakeSession:
     def __init__(self):
         self.headers, self.urls = {}, []

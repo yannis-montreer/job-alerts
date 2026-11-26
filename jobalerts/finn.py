@@ -185,18 +185,22 @@ def user_agent() -> str:
     return f"job-alerts/1.0 (personal job search tool; contact: {config.FINN_CONTACT_EMAIL})"
 
 
-def _job_postings(node):
-    """Yield every schema.org JobPosting found in a JSON-LD structure."""
+def _job_postings(node, depth=0):
+    """Yield every schema.org JobPosting found in a JSON-LD structure, at any nesting
+    (Finn wraps it: {"script:ld+json": {"@type": "JobPosting", ...}})."""
+    if depth > 6:
+        return
     if isinstance(node, list):
         for x in node:
-            yield from _job_postings(x)
+            yield from _job_postings(x, depth + 1)
     elif isinstance(node, dict):
         types = node.get("@type")
         if types == "JobPosting" or (isinstance(types, list) and "JobPosting" in types):
             yield node
-        for key in ("@graph", "mainEntity", "itemListElement"):
-            if key in node:
-                yield from _job_postings(node[key])
+            return
+        for value in node.values():
+            if isinstance(value, (dict, list)):
+                yield from _job_postings(value, depth + 1)
 
 
 def extract_description(page_html: str) -> str | None:
