@@ -379,7 +379,7 @@ def save_preferences():
 
 @app.get("/api/feedback")
 def feedback():
-    """Every ad Sven clicked or replied to, newest first (the examples the AI learns from)."""
+    """Every ad the user clicked or replied to, newest first (the examples the AI learns from)."""
     if not config.DB_PATH.exists():
         return jsonify(ok=True, rows=[])
     con = sqlite3.connect(config.DB_PATH)
