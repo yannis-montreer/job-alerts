@@ -1,7 +1,7 @@
 import pytest
 from conftest import add_ad
 
-from jobalerts import config, db, telegram, texts, triage
+from jobalerts import config, db, finn, telegram, texts, triage
 
 
 def test_texts_have_same_keys():
@@ -17,12 +17,14 @@ def test_keyboard_marks_choice():
 def test_format_offer_escapes_html():
     ad = dict(title="Sales <Lead> & co", employer="A&B", municipal="OSLO", score=4,
               norwegian_required=1, source="finn", summary_fr="Line 1\nLine 2",
-              url='https://example.org/?a=1&b="x"')
+              url='https://example.org/?a=1&b="x"', description=finn.LIMITED_INFO)
     text = telegram.format_offer(ad)
     assert "<b>Sales &lt;Lead&gt; &amp; co</b>" in text
     assert "A&amp;B · Oslo · 4/5" in text
     assert "Norwegian required" in text and "Finn: limited preview" in text
     assert 'href="https://example.org/?a=1&amp;b=&quot;x&quot;"' in text
+    ad["description"] = "Full ad text fetched with permission."
+    assert "limited preview" not in telegram.format_offer(ad)
 
 
 def test_collect_updates_stores_clicks_and_replies(con, monkeypatch):

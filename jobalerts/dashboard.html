@@ -226,7 +226,7 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
       <li>On <a href="https://www.finn.no/" target="_blank" rel="noopener">finn.no</a>, search jobs with your area and categories, then save the search as an alert (Søkeagent) sent by email.</li>
       <li>Use the Gmail address below to receive it.</li>
     </ol>
-    <p class="hint">The tool reads only those emails and never downloads finn.no pages: Finn's terms forbid automated access. Finn ads therefore show title, employer and place only; open the link to read them.</p>
+    <p class="hint">By default the tool reads only those emails and never downloads finn.no pages: Finn's terms forbid automated access without written permission. Finn ads then show title, employer and place only; open the link to read them. See step 3 to read the full ads.</p>
   </div>
   <div class="card">
     <h3>2. Connect Gmail</h3>
@@ -246,6 +246,19 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
       <button onclick="testGmail()">Test connection</button>
     </div>
     <div class="msg" id="gmMsg"></div>
+  </div>
+  <div class="card">
+    <h3>3. Read the full ads <span class="hint">(only with Finn's written permission)</span></h3>
+    <p>Turn this on <b>only if Finn has given you written permission</b>, for example by email from Finn's customer service. Ask them first: explain that it is for your personal job search, once a day, only the ads from your own alerts.</p>
+    <p class="hint">When on, each new ad page from your alert emails is downloaded once, during the morning run, at least 5 seconds apart, with your contact email in the request header so Finn can identify it. Only the description is kept, on this computer. Never share it, and delete it when your job search ends.</p>
+    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="FINN_FETCH_PAGES"> Finn gave me written permission: download the ad pages</label>
+    <label for="FINN_CONTACT_EMAIL">Contact email <span class="hint">sent to Finn with each request, as they ask</span></label>
+    <input type="text" id="FINN_CONTACT_EMAIL" autocomplete="off">
+    <div class="row">
+      <button class="primary" onclick="saveFinnPages()">Save</button>
+      <button onclick="purgeFinn()">Delete stored Finn descriptions</button>
+    </div>
+    <div class="msg" id="finnPagesMsg"></div>
   </div>
 </section>
 
@@ -328,7 +341,8 @@ window.addEventListener("hashchange", show);
 // ---------- settings ----------
 async function loadSettings() {
   settings = await api("/api/settings");
-  for (const [k, v] of Object.entries(settings.values)) if ($(k) && k !== "LANGUAGE" && k !== "AI_PROVIDER") $(k).value = v;
+  for (const [k, v] of Object.entries(settings.values)) if ($(k) && !["LANGUAGE", "AI_PROVIDER", "FINN_FETCH_PAGES"].includes(k)) $(k).value = v;
+  $("FINN_FETCH_PAGES").checked = ["1", "true", "yes", "on"].includes((settings.values.FINN_FETCH_PAGES || "").toLowerCase());
   $("LANGUAGE").value = settings.values.LANGUAGE || "en";
   $("AI_PROVIDER").value = settings.values.AI_PROVIDER || "claude";
   for (const [k, set] of Object.entries(settings.secrets_set)) {
@@ -427,6 +441,22 @@ async function testGmail() {
         (r.emails ? "" : " No Finn alert yet: check that the alert is sent to this address."));
     } catch (e) { msg("gmMsg", "bad", e.message); }
   });
+}
+
+async function saveFinnPages() {
+  const btn = event.target;
+  await busy(btn, async () => {
+    try {
+      await api("/api/settings", { FINN_FETCH_PAGES: $("FINN_FETCH_PAGES").checked ? "true" : "false", FINN_CONTACT_EMAIL: $("FINN_CONTACT_EMAIL").value });
+      await loadSettings();
+      msg("finnPagesMsg", "ok", $("FINN_FETCH_PAGES").checked ? "Saved. New Finn ads will be read in full from the next morning run." : "Saved. Finn pages are not downloaded.");
+    } catch (e) { msg("finnPagesMsg", "bad", e.message); }
+  });
+}
+async function purgeFinn() {
+  if (!confirm("Delete every stored Finn ad description and summary? This cannot be undone.")) return;
+  try { const r = await api("/api/finn/purge", {}); msg("finnPagesMsg", "ok", `Deleted for ${r.count} Finn ad(s).`); }
+  catch (e) { msg("finnPagesMsg", "bad", e.message); }
 }
 
 // ---------- AI ----------

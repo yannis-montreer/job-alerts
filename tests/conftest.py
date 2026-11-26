@@ -24,6 +24,8 @@ TEST_ENV = {
     "AI_PROVIDER": "claude",
     "GEMINI_API_KEY": "",
     "GEMINI_MODEL": "",
+    "FINN_FETCH_PAGES": "false",
+    "FINN_CONTACT_EMAIL": "",
 }
 os.environ.update(TEST_ENV)
 

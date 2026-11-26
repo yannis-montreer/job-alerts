@@ -58,7 +58,7 @@ Rules:
 - summary: exactly 2 lines in {language} (2 short sentences): what the job is, and the key point for {name} (sector, level, notable requirements). Invent nothing that is not in the ad.
 - norwegian_required = true if the ad explicitly requires or expects Norwegian. Apply what the profile says about Norwegian; if it says nothing, a Norwegian requirement alone does not make the ad irrelevant ({name} decides). false if the ad is in English with no language requirement.
 - reason: one short sentence explaining the verdict.
-- Some ads (source Finn) have NO description: only title, employer and location are known. Then judge on those without inventing anything, set relevant = true only if the title or employer plausibly matches the targeted roles, set norwegian_required = false (language unknown), and say in the summary that information is limited and the link must be opened.
+- Some ads (source Finn) may have NO description, only a note saying so: only title, employer and location are known. Then judge on those without inventing anything, set relevant = true only if the title or employer plausibly matches the targeted roles, set norwegian_required = false (language unknown), and say in the summary that information is limited and the link must be opened.
 - If an ad requires a higher degree, do not reject it automatically: mention it in the summary.
 - Use {name}'s past decisions as examples of their preferences, without copying them blindly.
 - Return exactly one result per ad, with the given id.

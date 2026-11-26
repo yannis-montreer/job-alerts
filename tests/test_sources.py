@@ -38,6 +38,75 @@ def test_finn_in_target(loc, expected):
     assert finn.in_target(loc) is expected
 
 
+PAGE = """<html><head>
+<script type="application/ld+json">{"@type": "BreadcrumbList"}</script>
+<script type="application/ld+json">
+{"@context": "https://schema.org", "@graph": [{"@type": "Organization"},
+ {"@type": "JobPosting", "title": "Business Developer",
+  "description": "<p>We are looking for a <b>Business Developer</b> to grow B2B sales in Oslo.</p><ul><li>English required</li></ul>"}]}
+</script></head><body>...</body></html>"""
+
+
+def test_finn_disabled_by_default():
+    assert finn.config.FINN_FETCH_PAGES is False
+
+
+def test_extract_description_from_json_ld():
+    text = finn.extract_description(PAGE)
+    assert text.startswith("We are looking for a Business Developer to grow B2B sales in Oslo.")
+    assert "- English required" in text
+    assert finn.extract_description("<html>no structured data</html>") is None
+
+
+class FakeSession:
+    def __init__(self):
+        self.headers, self.urls = {}, []
+
+    def get(self, url, timeout):
+        self.urls.append(url)
+        page = PAGE if url.endswith("/1") else "<html>nothing</html>"
+        return type("R", (), {"text": page, "raise_for_status": lambda self: None})()
+
+
+def test_fetch_descriptions_is_slow_capped_and_identified(con, monkeypatch):
+    from conftest import add_ad
+    session, sleeps = FakeSession(), []
+    monkeypatch.setattr(finn.requests, "Session", lambda: session)
+    monkeypatch.setattr(finn.time, "sleep", sleeps.append)
+    monkeypatch.setattr(finn.config, "FINN_CONTACT_EMAIL", "me@example.org")
+    monkeypatch.setattr(finn.config, "FINN_MAX_PAGES_PER_RUN", 2)
+    ads = []
+    for code in ("1", "2", "3"):
+        ads.append(add_ad(con, f"finn:{code}", url=f"https://www.finn.no/{code}", source="finn",
+                          description=finn.LIMITED_INFO))
+    stats = finn.fetch_descriptions(con, ads)
+    assert stats == dict(fetched=1, failed=1, skipped=1)
+    assert session.urls == ["https://www.finn.no/1", "https://www.finn.no/2"]  # cap: third not fetched
+    assert sleeps == [finn.config.FINN_DELAY_S] and finn.config.FINN_DELAY_S >= 5
+    assert "me@example.org" in session.headers["User-Agent"]
+    rows = {r["uuid"]: r["description"] for r in con.execute("SELECT uuid, description FROM ads")}
+    assert rows["finn:1"].startswith("We are looking for")
+    assert rows["finn:2"] == rows["finn:3"] == finn.LIMITED_INFO  # failures keep the preview
+
+
+def test_fetch_requires_contact_email(monkeypatch):
+    monkeypatch.setattr(finn.config, "FINN_CONTACT_EMAIL", "")
+    with pytest.raises(RuntimeError, match="FINN_CONTACT_EMAIL"):
+        finn.user_agent()
+
+
+def test_purge_deletes_finn_content_only(con):
+    from conftest import add_ad
+    add_ad(con, "finn:9", source="finn", description="Full text")
+    add_ad(con, "nav-9", description="NAV text")
+    con.execute("UPDATE ads SET summary_fr='summary'")
+    con.commit()
+    assert finn.purge(con) == 1
+    rows = {r["uuid"]: (r["description"], r["summary_fr"]) for r in con.execute("SELECT * FROM ads")}
+    assert rows["finn:9"] == (finn.LIMITED_INFO, None)
+    assert rows["nav-9"] == ("NAV text", "summary")
+
+
 def test_html_to_text():
     html = "<p>Hello&nbsp;<b>world</b></p><ul><li>one</li><li>two</li></ul>"
     assert nav.html_to_text(html) == "Hello\xa0world\n- one\n- two"

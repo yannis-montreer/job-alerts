@@ -13,7 +13,7 @@ import sys
 
 import requests
 
-from . import db
+from . import db, finn
 from .texts import t
 
 log = logging.getLogger(__name__)
@@ -69,7 +69,7 @@ def format_offer(ad) -> str:
     ]
     if ad["norwegian_required"]:
         lines.append(t("norwegian"))
-    if ad["source"] == "finn":
+    if ad["source"] == "finn" and not finn.has_description(ad):
         lines.append(t("finn_limited"))
     lines += ["", e(ad["summary_fr"] or ""), "",
               f'<a href="{e(ad["url"] or "", quote=True)}">{e(t("see_ad"))}</a>']

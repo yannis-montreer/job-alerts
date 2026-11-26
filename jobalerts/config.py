@@ -20,6 +20,13 @@ AI_PROVIDER = (os.getenv("AI_PROVIDER", "claude").strip().lower() or "claude")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "").strip() or "gemini-flash-latest"
 
+# Finn ad pages: OFF by default. Finn's terms forbid automated access without written
+# permission; turn this on only if Finn gave YOU written permission (see README).
+FINN_FETCH_PAGES = os.getenv("FINN_FETCH_PAGES", "").strip().lower() in ("1", "true", "yes", "on")
+FINN_CONTACT_EMAIL = os.getenv("FINN_CONTACT_EMAIL", "").strip()  # sent in the User-Agent, as Finn asks
+FINN_DELAY_S = 5          # between two page requests (Finn asked for at least 2-5 s)
+FINN_MAX_PAGES_PER_RUN = 30
+
 NAV_BASE = "https://pam-stilling-feed.nav.no"
 NAV_TOKEN = os.getenv("NAV_TOKEN", "").strip()
 

@@ -41,7 +41,8 @@ DEFAULT_PORT = 8765
 
 SECRET_KEYS = {"TELEGRAM_BOT_TOKEN", "GMAIL_APP_PASSWORD", "NAV_TOKEN", "GEMINI_API_KEY"}
 PLAIN_KEYS = {"CANDIDATE_NAME", "LANGUAGE", "TELEGRAM_CHAT_ID", "GMAIL_ADDRESS", "GMAIL_FINN_LABEL",
-              "TARGET_MUNICIPALITIES", "TARGET_COUNTIES", "AI_PROVIDER", "GEMINI_MODEL"}
+              "TARGET_MUNICIPALITIES", "TARGET_COUNTIES", "AI_PROVIDER", "GEMINI_MODEL",
+              "FINN_FETCH_PAGES", "FINN_CONTACT_EMAIL"}
 AREA_GROUPS = {
     "Oslo": ["OSLO"],
     "Akershus": sorted(config.AKERSHUS),
@@ -266,6 +267,14 @@ def save_settings():
         raise UserError("AI must be claude or gemini")
     if updates.get("GEMINI_MODEL") and not re.fullmatch(r"[a-z0-9][a-z0-9.\-]{1,60}", updates["GEMINI_MODEL"]):
         raise UserError("Gemini model id looks wrong (e.g. gemini-flash-latest)")
+    if "FINN_FETCH_PAGES" in updates:
+        updates["FINN_FETCH_PAGES"] = "true" if updates["FINN_FETCH_PAGES"].lower() in ("1", "true", "yes", "on") else "false"
+    if updates.get("FINN_CONTACT_EMAIL") and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", updates["FINN_CONTACT_EMAIL"]):
+        raise UserError("The Finn contact email looks wrong")
+    if updates.get("FINN_FETCH_PAGES") == "true":
+        email = updates.get("FINN_CONTACT_EMAIL", env_values().get("FINN_CONTACT_EMAIL", ""))
+        if not email:
+            raise UserError("Fetching Finn pages needs a contact email (Finn asks for it in the User-Agent)")
     if updates.get("TELEGRAM_CHAT_ID") and not re.fullmatch(r"-?\d+", updates["TELEGRAM_CHAT_ID"]):
         raise UserError("The chat id is a number (use 'Detect' in the Telegram section)")
     for k in SECRET_KEYS:  # empty field = keep the current value; "clear" list = remove it
@@ -337,6 +346,16 @@ def telegram_test():
 def gmail_test():
     reload_settings()
     return jsonify(ok=True, result=finn.check_connection())
+
+
+@app.post("/api/finn/purge")
+def finn_purge():
+    from . import db
+    con = db.connect()
+    try:
+        return jsonify(ok=True, count=finn.purge(con))
+    finally:
+        con.close()
 
 
 @app.post("/api/gemini/test")

@@ -94,6 +94,8 @@ def test_default_area_is_stored_empty(client, env_file):
     ({"LANGUAGE": "de"}, "Language"),
     ({"AI_PROVIDER": "chatgpt"}, "claude or gemini"),
     ({"GEMINI_MODEL": "bad model!"}, "model id"),
+    ({"FINN_FETCH_PAGES": "true"}, "contact email"),
+    ({"FINN_CONTACT_EMAIL": "not-an-email"}, "email looks wrong"),
     ({"TELEGRAM_CHAT_ID": "abc"}, "chat id"),
     ({"area": {"municipalities": [], "extra": "", "counties": []}}, "municipality"),
 ])

@@ -1,16 +1,28 @@
 """Finn.no via the alert emails ("Søkeagent") read from Gmail over IMAP.
 
-Respecting Finn's terms: only the alert emails received in your own mailbox are read. No
-finn.no page is downloaded by the script (Finn's robots.txt and terms forbid automated access
-without written permission). Only title, employer, location and link are known: sorting is
-based on those, and the user opens the link to read the ad.
+Respecting Finn's terms:
+- By default, only the alert emails received in your own mailbox are read and no finn.no page
+  is downloaded (Finn's robots.txt and terms forbid automated access without written
+  permission). Only title, employer, location and link are then known.
+- With FINN_FETCH_PAGES=true (only if Finn gave YOU written permission), each new ad page linked
+  from the alert emails is downloaded once, during the daily run, at least FINN_DELAY_S seconds
+  apart, with a User-Agent that names the tool and FINN_CONTACT_EMAIL. Only the description is
+  kept, in the local database, never shared.
+
+Delete the stored Finn descriptions when the job search ends:  python -m jobalerts.finn --purge
 """
+import html
 import imaplib
+import json
 import logging
 import os
 import re
+import sys
+import time
 from datetime import datetime, timedelta, timezone
 from email import message_from_bytes
+
+import requests
 
 from . import config, db
 
@@ -159,5 +171,104 @@ def fetch_new_ads(con):
         except Exception:
             pass
     db.set_meta(con, "finn_last_success", db.now_iso())
+    if config.FINN_FETCH_PAGES and new_ads:
+        stats["pages"] = fetch_descriptions(con, new_ads)
     log.info("Finn: %s", stats)
     return new_ads, stats
+
+
+# ---------- ad pages (only with Finn's written permission, FINN_FETCH_PAGES=true) ----------
+
+def user_agent() -> str:
+    if not config.FINN_CONTACT_EMAIL:
+        raise RuntimeError("FINN_CONTACT_EMAIL is required to fetch Finn pages (Finn asks for a contact in the User-Agent)")
+    return f"job-alerts/1.0 (personal job search tool; contact: {config.FINN_CONTACT_EMAIL})"
+
+
+def _job_postings(node):
+    """Yield every schema.org JobPosting found in a JSON-LD structure."""
+    if isinstance(node, list):
+        for x in node:
+            yield from _job_postings(x)
+    elif isinstance(node, dict):
+        types = node.get("@type")
+        if types == "JobPosting" or (isinstance(types, list) and "JobPosting" in types):
+            yield node
+        for key in ("@graph", "mainEntity", "itemListElement"):
+            if key in node:
+                yield from _job_postings(node[key])
+
+
+def extract_description(page_html: str) -> str | None:
+    """The ad description from a Finn job page: the schema.org JobPosting embedded as JSON-LD."""
+    from .nav import html_to_text
+    for raw in re.findall(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+                          page_html, flags=re.S | re.I):
+        data = None
+        for candidate in (raw, html.unescape(raw)):
+            try:
+                data = json.loads(candidate)
+                break
+            except ValueError:
+                continue
+        if data is None:
+            continue
+        for posting in _job_postings(data):
+            text = html_to_text(posting.get("description") or "")
+            if len(text) > 50:
+                return text
+    return None
+
+
+def fetch_descriptions(con, ads: list[dict]) -> dict:
+    """Download each new ad page once, slowly, and store its description. Failures keep the preview."""
+    stats = dict(fetched=0, failed=0, skipped=0)
+    session = requests.Session()
+    session.headers.update({"User-Agent": user_agent(), "Accept-Language": "nb-NO,nb;q=0.9,en;q=0.8"})
+    for i, ad in enumerate(ads):
+        if i >= config.FINN_MAX_PAGES_PER_RUN:
+            stats["skipped"] += 1
+            continue
+        if i:
+            time.sleep(config.FINN_DELAY_S)
+        try:
+            r = session.get(ad["url"], timeout=30)
+            r.raise_for_status()
+            text = extract_description(r.text)
+        except requests.RequestException as e:
+            log.warning("Finn page %s: %s", ad["url"], e)
+            text = None
+        if not text:
+            stats["failed"] += 1
+            continue
+        con.execute("UPDATE ads SET description=? WHERE uuid=?", (text, ad["uuid"]))
+        con.commit()
+        ad["description"] = text
+        stats["fetched"] += 1
+    return stats
+
+
+def has_description(ad) -> bool:
+    return ad["description"] not in (None, "", LIMITED_INFO)
+
+
+def purge(con) -> int:
+    """Delete stored Finn descriptions and summaries (to do when the job search ends)."""
+    cur = con.execute(
+        "UPDATE ads SET description=?, summary_fr=NULL WHERE source='finn' "
+        "AND (description IS NOT ? OR summary_fr IS NOT NULL)", (LIMITED_INFO, LIMITED_INFO))
+    con.commit()
+    return cur.rowcount
+
+
+def main() -> int:
+    if "--purge" in sys.argv:
+        n = purge(db.connect())
+        print(f"Finn: descriptions and summaries deleted for {n} ad(s).")
+        return 0
+    print("Usage: python -m jobalerts.finn --purge")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

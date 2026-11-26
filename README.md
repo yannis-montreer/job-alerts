@@ -5,7 +5,8 @@ own profile with Claude or Gemini, and sends the relevant ones to you on Telegra
 **Reject** buttons. Your clicks and replies teach the sorting your preferences over time.
 
 - **Sources:** the public NAV / Arbeidsplassen feed (full ad text), and optionally Finn.no
-  through your own Finn alert emails (title, employer and location only, see below).
+  through your own Finn alert emails (title, employer and location only, or the full ad if
+  Finn gave you written permission, see below).
 - **Sorting:** one AI call per run, no keyword filter: the AI reads each ad and your profile.
   Either **Claude** (`claude -p` with your Claude Pro or Max subscription, no API key) or
   **Gemini** (Gemini API with a free API key from Google AI Studio).
@@ -62,7 +63,8 @@ that walks you through every step below, with a test button for each part:
 - **Telegram:** save the bot token, detect your chat id, send a test message.
 - **AI:** choose Claude or Gemini. Claude: install and log in, see when the login expires.
   Gemini: save the API key and test it.
-- **Finn alerts:** Gmail address and app password, connection test.
+- **Finn alerts:** Gmail address and app password, connection test; optional full-ad reading
+  (only with Finn's written permission) and deletion of the stored descriptions.
 - **Schedule:** create, update or remove the scheduled tasks.
 - **Run now** and **History:** run by hand, see the log, see the ads sent and your decisions.
 
@@ -120,9 +122,22 @@ read your clicks before the script does.
 3. Put the address and the app password in `GMAIL_ADDRESS` and `GMAIL_APP_PASSWORD`.
    Optionally, filter the alerts into a Gmail label and set `GMAIL_FINN_LABEL`.
 
-The script reads only emails from `agent@finn.no`, in read-only mode. It **does not download
-any finn.no page**: Finn's terms and robots.txt forbid automated access without written
-permission. Finn ads therefore arrive with a "limited preview" note; open the link to read them.
+The script reads only emails from `agent@finn.no`, in read-only mode. By default it **does not
+download any finn.no page**: Finn's terms and robots.txt forbid automated access without written
+permission. Finn ads then arrive with a "limited preview" note; open the link to read them.
+
+**Reading the full Finn ads (only with your own written permission).** Finn may grant a
+personal exception if you ask its customer service first. Explain your use: personal,
+non-commercial job search; only the ad pages linked from your own alert emails; once a day;
+a few seconds between requests; a User-Agent with your contact email. A permission given to
+someone else does not cover you. Once you have it in writing:
+- set `FINN_FETCH_PAGES=true` and `FINN_CONTACT_EMAIL=you@example.com` in `.env` (or tick the
+  box in the dashboard's Finn section);
+- each new ad page is then downloaded once, in the morning run, at least 5 seconds apart
+  (30 pages per run at most), and only its description is stored locally for sorting;
+- never share or republish that content, and delete it when your job search ends:
+  `.venv\Scripts\python.exe -m jobalerts.finn --purge` (or the button in the dashboard).
+- Follow any further limits Finn sets, and stop if they withdraw the permission.
 
 ### 7. Test it by hand
 ```powershell
