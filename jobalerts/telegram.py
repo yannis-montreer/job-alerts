@@ -13,10 +13,11 @@ import sys
 
 import requests
 
-from . import config, db, finn
+from . import config, db, finn, linkedin
 from .texts import t
 
 log = logging.getLogger(__name__)
+SOURCE_NAMES = {"finn": "Finn", "linkedin": "LinkedIn"}  # sources that can lack a description
 API = "https://api.telegram.org/bot{token}/{method}"
 TIMEOUT = 30
 
@@ -69,8 +70,8 @@ def format_offer(ad) -> str:
     ]
     if ad["norwegian_required"]:
         lines.append(t("norwegian"))
-    if ad["source"] == "finn" and not finn.has_description(ad):
-        lines.append(t("finn_limited"))
+    if ad["source"] in SOURCE_NAMES and ad["description"] in (None, "", finn.LIMITED_INFO, linkedin.LIMITED_INFO):
+        lines.append(t("limited", source=SOURCE_NAMES[ad["source"]]))
     lines += ["", e(ad["summary_fr"] or ""), "",
               f'<a href="{e(ad["url"] or "", quote=True)}">{e(t("see_ad"))}</a>']
     return "\n".join(lines)

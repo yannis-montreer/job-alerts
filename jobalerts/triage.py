@@ -16,7 +16,7 @@ from pathlib import Path
 
 import requests
 
-from . import config, db, texts
+from . import config, db, preferences, texts
 
 log = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ Rules:
 - summary: exactly 2 lines in {language} (2 short sentences): what the job is, and the key point for {name} (sector, level, notable requirements). Invent nothing that is not in the ad.
 - norwegian_required = true if the ad explicitly requires or expects Norwegian. Apply what the profile says about Norwegian; if it says nothing, a Norwegian requirement alone does not make the ad irrelevant ({name} decides). false if the ad is in English with no language requirement.
 - reason: one short sentence explaining the verdict.
-- Some ads (source Finn) may have NO description, only a note saying so: only title, employer and location are known. Then judge on those without inventing anything, set relevant = true only if the title or employer plausibly matches the targeted roles, set norwegian_required = false (language unknown), and say in the summary that information is limited and the link must be opened.
+- Some ads (from Finn or LinkedIn alert emails) may have NO description, only a note saying so: only title, employer and location are known. Then judge on those without inventing anything, set relevant = true only if the title or employer plausibly matches the targeted roles, set norwegian_required = false (language unknown), and say in the summary that information is limited and the link must be opened.
 - If an ad requires a higher degree, do not reject it automatically: mention it in the summary.
 - Use {name}'s past decisions as examples of their preferences, without copying them blindly.
 - Return exactly one result per ad, with the given id.
@@ -97,7 +97,11 @@ def build_prompt(con, ads) -> str:
         raise RuntimeError(f"Profile missing: {config.PROFILE_PATH} (copy profile.example.md and fill it in)")
     profile = config.PROFILE_PATH.read_text(encoding="utf-8")
     instructions = INSTRUCTIONS.format(name=config.CANDIDATE_NAME, language=texts.language_name())
-    parts = [instructions, "# PROFILE\n" + profile, "# PAST DECISIONS\n" + past_examples(con), "# TODAY'S ADS"]
+    parts = [instructions, "# PROFILE\n" + profile]
+    prefs = preferences.prompt_section()
+    if prefs:
+        parts.append(prefs)
+    parts += ["# PAST DECISIONS\n" + past_examples(con), "# TODAY'S ADS"]
     for i, ad in enumerate(ads, 1):
         desc = (ad["description"] or "")[:MAX_DESC_CHARS]
         parts.append(

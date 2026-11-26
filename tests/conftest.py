@@ -29,10 +29,20 @@ TEST_ENV = {
     "MESSAGE_MIN_SCORE": "4",
     "DIGEST_MIN_SCORE": "3",
     "NORWEGIAN_REQUIRED": "flag",
+    "SOURCE_NAV": "",
+    "SOURCE_FINN": "",
+    "SOURCE_LINKEDIN": "",
+    "GMAIL_LINKEDIN_LABEL": "",
 }
 os.environ.update(TEST_ENV)
 
-from jobalerts import config, db  # noqa: E402
+from jobalerts import config, db, preferences  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def isolated_preferences(tmp_path, monkeypatch):
+    """Never read or write the real preferences.json."""
+    monkeypatch.setattr(preferences, "PATH", tmp_path / "preferences.json")
 
 
 @pytest.fixture

@@ -1,6 +1,6 @@
 """One run of the pipeline.
 
-  python -m jobalerts.run                 full run (clicks -> NAV + Finn -> sorting -> send)
+  python -m jobalerts.run                 full run (clicks -> NAV, Finn, LinkedIn -> sorting -> send)
   python -m jobalerts.run --collect-only  catch-up run: only reads Telegram clicks and replies
   add --console to also log to the console
 
@@ -18,7 +18,7 @@ import sys
 import traceback
 from datetime import datetime, timedelta, timezone
 
-from . import config, db, finn, nav, telegram, triage
+from . import config, db, finn, linkedin, nav, telegram, triage
 from .texts import t
 
 LOGIN_WARN_DAYS = 5
@@ -78,19 +78,22 @@ def run(collect_only: bool) -> int:
         return 0
 
     # 2. New NAV ads.
-    since = nav.compute_since(con)
-    logging.info("NAV window since %s", since.isoformat())
-    new_ads, _ = nav.fetch_new_ads(con, since)
-    db.set_meta(con, "nav_last_success", db.now_iso())
+    new_ads = []
+    if config.SOURCE_NAV:
+        since = nav.compute_since(con)
+        logging.info("NAV window since %s", since.isoformat())
+        new_ads, _ = nav.fetch_new_ads(con, since)
+        db.set_meta(con, "nav_last_success", db.now_iso())
 
-    # 2b. Finn via alert emails: a failure here must not block NAV or sorting.
-    finn_error = None
-    try:
-        finn_ads, _ = finn.fetch_new_ads(con)
-        new_ads += finn_ads
-    except Exception as e:
-        finn_error = scrub(str(e))
-        logging.error("Finn failed:\n%s", scrub(traceback.format_exc()))
+    # 2b. Alert-email sources: a failure here must not block the other sources or sorting.
+    source_errors = []
+    for name, module in (("Finn", finn), ("LinkedIn", linkedin)):
+        try:
+            ads, _ = module.fetch_new_ads(con)
+            new_ads += ads
+        except Exception as e:
+            source_errors.append((name, scrub(str(e))))
+            logging.error("%s failed:\n%s", name, scrub(traceback.format_exc()))
 
     # 3. Sorting: a single AI call (also picks up ads left unsorted).
     triage.triage(con)
@@ -100,8 +103,8 @@ def run(collect_only: bool) -> int:
     if sent == 0:
         telegram.send_text(t("none_today", n=len(new_ads)))
 
-    if finn_error:
-        telegram.send_text(t("finn_failed", err=finn_error[:400]))
+    for name, err in source_errors:
+        telegram.send_text(t("source_failed", source=name, err=err[:400]))
     check_claude_login()
     return 0
 

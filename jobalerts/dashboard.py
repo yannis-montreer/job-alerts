@@ -27,7 +27,7 @@ from pathlib import Path
 from dotenv import dotenv_values, load_dotenv
 from flask import Flask, abort, jsonify, request
 
-from . import config, finn, telegram, triage
+from . import config, finn, linkedin, preferences, telegram, triage
 
 ROOT = config.ROOT
 ENV_PATH = ROOT / ".env"
@@ -43,7 +43,9 @@ SECRET_KEYS = {"TELEGRAM_BOT_TOKEN", "GMAIL_APP_PASSWORD", "NAV_TOKEN", "GEMINI_
 PLAIN_KEYS = {"CANDIDATE_NAME", "LANGUAGE", "TELEGRAM_CHAT_ID", "GMAIL_ADDRESS", "GMAIL_FINN_LABEL",
               "TARGET_MUNICIPALITIES", "TARGET_COUNTIES", "AI_PROVIDER", "GEMINI_MODEL",
               "FINN_FETCH_PAGES", "FINN_CONTACT_EMAIL",
-              "NORWEGIAN_REQUIRED", "MESSAGE_MIN_SCORE", "DIGEST_MIN_SCORE"}
+              "NORWEGIAN_REQUIRED", "MESSAGE_MIN_SCORE", "DIGEST_MIN_SCORE",
+              "SOURCE_NAV", "SOURCE_FINN", "SOURCE_LINKEDIN", "GMAIL_LINKEDIN_LABEL"}
+BOOL_KEYS = {"FINN_FETCH_PAGES", "SOURCE_NAV", "SOURCE_FINN", "SOURCE_LINKEDIN"}
 AREA_GROUPS = {
     "Oslo": ["OSLO"],
     "Akershus": sorted(config.AKERSHUS),
@@ -130,6 +132,11 @@ def reload_settings():
 
 def env_values() -> dict:
     return {k: (v or "") for k, v in dotenv_values(ENV_PATH).items()} if ENV_PATH.exists() else {}
+
+
+def _flag(env: dict, key: str, default: bool) -> bool:
+    raw = (env.get(key) or "").strip().lower()
+    return default if not raw else raw in ("1", "true", "yes", "on")
 
 
 def _split(raw: str) -> set[str]:
@@ -276,8 +283,8 @@ def save_settings():
     if "MESSAGE_MIN_SCORE" in updates and "DIGEST_MIN_SCORE" in updates \
             and int(updates["DIGEST_MIN_SCORE"]) > int(updates["MESSAGE_MIN_SCORE"]):
         raise UserError("The digest minimum must not be above the message minimum")
-    if "FINN_FETCH_PAGES" in updates:
-        updates["FINN_FETCH_PAGES"] = "true" if updates["FINN_FETCH_PAGES"].lower() in ("1", "true", "yes", "on") else "false"
+    for k in BOOL_KEYS & set(updates):
+        updates[k] = "true" if updates[k].lower() in ("1", "true", "yes", "on") else "false"
     if updates.get("FINN_CONTACT_EMAIL") and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", updates["FINN_CONTACT_EMAIL"]):
         raise UserError("The Finn contact email looks wrong")
     if updates.get("FINN_FETCH_PAGES") == "true":
@@ -321,6 +328,8 @@ def status():
         claude=claude_status(),
         telegram=dict(token=bool(env.get("TELEGRAM_BOT_TOKEN")), chat_id=bool(env.get("TELEGRAM_CHAT_ID"))),
         gmail=dict(configured=bool(env.get("GMAIL_ADDRESS") and env.get("GMAIL_APP_PASSWORD"))),
+        sources=dict(nav=_flag(env, "SOURCE_NAV", True), finn=_flag(env, "SOURCE_FINN", True),
+                     linkedin=_flag(env, "SOURCE_LINKEDIN", False)),
         profile=profile_state(),
         name=bool(env.get("CANDIDATE_NAME")),
         tasks=tasks, tasks_error=tasks_error,
@@ -355,6 +364,41 @@ def telegram_test():
 def gmail_test():
     reload_settings()
     return jsonify(ok=True, result=finn.check_connection())
+
+
+@app.get("/api/preferences")
+def get_preferences():
+    return jsonify(ok=True, preferences=preferences.load(), levels=list(preferences.LEVELS))
+
+
+@app.post("/api/preferences")
+def save_preferences():
+    data = preferences.save((request.get_json(force=True) or {}).get("preferences") or {})
+    return jsonify(ok=True, preferences=data, prompt=preferences.prompt_section(data))
+
+
+@app.get("/api/feedback")
+def feedback():
+    """Every ad Sven clicked or replied to, newest first (the examples the AI learns from)."""
+    if not config.DB_PATH.exists():
+        return jsonify(ok=True, rows=[])
+    con = sqlite3.connect(config.DB_PATH)
+    con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT a.title, a.employer, a.url, a.source, "
+        "(SELECT decision FROM decisions WHERE uuid=a.uuid ORDER BY id DESC LIMIT 1) AS decision, "
+        "(SELECT group_concat(text, ' / ') FROM notes WHERE uuid=a.uuid) AS notes "
+        "FROM ads a WHERE EXISTS (SELECT 1 FROM decisions WHERE uuid=a.uuid) "
+        "OR EXISTS (SELECT 1 FROM notes WHERE uuid=a.uuid) ORDER BY a.sent_at DESC"
+    ).fetchall()
+    con.close()
+    return jsonify(ok=True, rows=[dict(r) for r in rows])
+
+
+@app.post("/api/linkedin/test")
+def linkedin_test():
+    reload_settings()
+    return jsonify(ok=True, result=linkedin.check_connection())
 
 
 @app.post("/api/finn/purge")

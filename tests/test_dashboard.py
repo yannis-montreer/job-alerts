@@ -81,6 +81,35 @@ def test_save_gemini_settings(client, env_file):
     assert data["secrets_set"]["GEMINI_API_KEY"] is True and "AIza-test" not in str(data)
 
 
+def test_preferences_api(client):
+    r = client.post("/api/preferences", base_url=BASE, headers=H, json={"preferences": {
+        "target_roles": [{"name": "Barista", "level": "also"}], "exclude": ["Call center"]}})
+    assert r.status_code == 200 and "Barista" in r.get_json()["prompt"]
+    data = client.get("/api/preferences", base_url=BASE, headers=H).get_json()
+    assert data["preferences"]["exclude"] == ["Call center"]
+
+
+def test_feedback_lists_clicks_and_replies(client, con):
+    from conftest import add_ad
+    add_ad(con, "old", title="Telefonselger")
+    add_ad(con, "clicked", title="SDR")
+    add_ad(con, "silent", title="Nothing")
+    con.execute("INSERT INTO notes(uuid, text) VALUES('old', 'Téléprospection précaire')")
+    con.execute("INSERT INTO decisions(uuid, decision, decided_at) VALUES('clicked', 'keep', 'x')")
+    con.commit()
+    rows = client.get("/api/feedback", base_url=BASE, headers=H).get_json()["rows"]
+    assert {r["title"]: (r["decision"], r["notes"]) for r in rows} == {
+        "Telefonselger": (None, "Téléprospection précaire"), "SDR": ("keep", None)}
+
+
+def test_source_switches_are_saved_as_booleans(client, env_file):
+    r = client.post("/api/settings", base_url=BASE, headers=H, json={
+        "SOURCE_NAV": "false", "SOURCE_LINKEDIN": "on", "GMAIL_LINKEDIN_LABEL": "linkedin-jobs"})
+    assert r.status_code == 200
+    values = dotenv_values(env_file)
+    assert (values["SOURCE_NAV"], values["SOURCE_LINKEDIN"], values["GMAIL_LINKEDIN_LABEL"]) == ("false", "true", "linkedin-jobs")
+
+
 def test_default_area_is_stored_empty(client, env_file):
     defaults = sorted(dashboard.DEFAULT_MUNICIPALITIES)
     r = client.post("/api/settings", base_url=BASE, headers=H, json={

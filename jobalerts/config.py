@@ -35,6 +35,16 @@ AI_PROVIDER = (os.getenv("AI_PROVIDER", "claude").strip().lower() or "claude")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "").strip() or "gemini-flash-latest"
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    return default if not raw else raw in ("1", "true", "yes", "on")
+
+
+# Sources. Finn and LinkedIn are read from their alert emails in Gmail (GMAIL_* settings).
+SOURCE_NAV = _env_bool("SOURCE_NAV", True)
+SOURCE_FINN = _env_bool("SOURCE_FINN", True)
+SOURCE_LINKEDIN = _env_bool("SOURCE_LINKEDIN", False)
+
 # Finn ad pages: OFF by default. Finn's terms forbid automated access without written
 # permission; turn this on only if Finn gave YOU written permission (see README).
 FINN_FETCH_PAGES = os.getenv("FINN_FETCH_PAGES", "").strip().lower() in ("1", "true", "yes", "on")

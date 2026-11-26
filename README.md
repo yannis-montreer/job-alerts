@@ -4,9 +4,11 @@ A small Windows tool that watches job ads in Norway every morning, sorts them ag
 own profile with Claude or Gemini, and sends the relevant ones to you on Telegram with **Keep** /
 **Reject** buttons. Your clicks and replies teach the sorting your preferences over time.
 
-- **Sources:** the public NAV / Arbeidsplassen feed (full ad text), and optionally Finn.no
-  through your own Finn alert emails (title, employer and location only, or the full ad if
-  Finn gave you written permission, see below).
+- **Sources:** the public NAV / Arbeidsplassen feed (full ad text), and optionally Finn.no and
+  LinkedIn through your own alert emails (title, employer and location only; for Finn, the
+  full ad if Finn gave you written permission, see below). Each source can be switched off.
+- **Preferences:** target roles ("main" or "also OK") and things to always reject, edited in
+  the dashboard, on top of a free-text profile.
 - **Sorting:** one AI call per run, no keyword filter: the AI reads each ad and your profile.
   Either **Claude** (`claude -p` with your Claude Pro or Max subscription, no API key) or
   **Gemini** (Gemini API with a free API key from Google AI Studio).
@@ -64,8 +66,12 @@ Double-click **`dashboard.cmd`** in the project folder (or run
 `.venv\Scripts\python.exe -m jobalerts.dashboard`). It opens a local page in your browser
 that walks you through every step below, with a test button for each part:
 
-- **You & search:** name, language, area (municipality checkboxes) and your profile.
-- **Telegram:** save the bot token, detect your chat id, send a test message.
+- **Preferences:** target roles (main or also OK) and exclusions, with a filter box, plus
+  what the bot has learned from your clicks and replies.
+- **Profile & area:** name, language, what reaches Telegram, area (municipality checkboxes)
+  and your free-text profile.
+- **Sources:** switch NAV, Finn and LinkedIn on or off; Gmail connection; check buttons.
+- **Output (Telegram):** save the bot token from @BotFather, detect your chat id, test message.
 - **AI:** choose Claude or Gemini. Claude: install and log in, see when the login expires.
   Gemini: save the API key and test it.
 - **Finn alerts:** Gmail address and app password, connection test; optional full-ad reading
@@ -144,6 +150,17 @@ someone else does not cover you. Once you have it in writing:
   `.venv\Scripts\python.exe -m jobalerts.finn --purge` (or the button in the dashboard).
 - Follow any further limits Finn sets, and stop if they withdraw the permission.
 
+### 6b. Optional: LinkedIn alerts through Gmail
+1. On LinkedIn, search jobs (keywords and location) and turn on a **job alert** with daily emails,
+   sent to the same Gmail address.
+2. Set `SOURCE_LINKEDIN=true` (or tick the box in the dashboard's Sources page). Optionally,
+   filter the alerts into a Gmail label and set `GMAIL_LINKEDIN_LABEL`.
+3. When the first alert has arrived, use **Check LinkedIn alerts** in the dashboard: it shows how
+   many jobs it could read.
+
+Only emails from `jobalerts-noreply@linkedin.com` are read. **No linkedin.com page is ever
+downloaded** (LinkedIn's terms forbid scraping): LinkedIn ads arrive with a "limited preview" note.
+
 ### 7. Test it by hand
 ```powershell
 .venv\Scripts\python.exe -m jobalerts.run --console
@@ -168,7 +185,10 @@ Run the morning task by hand: `Start-ScheduledTask JobAlerts-Morning`.
 | --- | --- |
 | `jobalerts/run.py` | One run: clicks, sources, sorting, sending, error reporting |
 | `jobalerts/nav.py` | NAV feed (test alone: `python -m jobalerts.nav`) |
-| `jobalerts/finn.py` | Finn alert emails over IMAP |
+| `jobalerts/finn.py` | Finn alert emails, optional full-ad reading |
+| `jobalerts/linkedin.py` | LinkedIn alert emails |
+| `jobalerts/mail.py` | Shared Gmail reading (read-only) and area filter for these emails |
+| `jobalerts/preferences.py` | Target roles and exclusions (`preferences.json`, git-ignored) |
 | `jobalerts/triage.py` | Sorting with Claude or Gemini (test alone: `python -m jobalerts.triage`) |
 | `jobalerts/telegram.py` | Sending ads, reading clicks and replies |
 | `jobalerts/texts.py` | Telegram texts in English and French |

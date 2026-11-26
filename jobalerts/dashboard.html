@@ -88,10 +88,11 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
 <nav id="nav">
   <h1>Job Alerts</h1>
   <a href="#overview">Overview</a>
-  <a href="#search">You &amp; search</a>
-  <a href="#telegram">Telegram</a>
+  <a href="#prefs">Preferences</a>
+  <a href="#search">Profile &amp; area</a>
+  <a href="#sources">Sources</a>
+  <a href="#telegram">Output (Telegram)</a>
   <a href="#ai">AI (Claude / Gemini)</a>
-  <a href="#finn">Finn alerts</a>
   <a href="#schedule">Schedule</a>
   <a href="#run">Run now</a>
   <a href="#history">History</a>
@@ -106,9 +107,46 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
   <div class="card"><h3>Recent runs</h3><pre class="log" id="lastRuns">…</pre></div>
 </section>
 
+<section id="prefs">
+  <h2>Preferences</h2>
+  <p class="lead">Which jobs to look for and which to reject. The AI reads these at every run, on top of the profile, and they win where the two differ.</p>
+  <div class="card">
+    <input type="text" id="prefFilter" placeholder="Filter roles, exclusions and feedback…" oninput="renderPrefs()">
+  </div>
+  <div class="card">
+    <h3>Target roles</h3>
+    <p class="hint"><b>Main</b>: scored normally, good matches get their own message. <b>Also OK</b>: acceptable second choice, scored 3 at most, so they land in the daily digest.</p>
+    <table id="rolesTable"></table>
+    <div class="row">
+      <input type="text" id="newRole" placeholder="Add a role, e.g. Barista" style="flex:1;min-width:180px" onkeydown="if(event.key==='Enter')addRole()">
+      <select id="newRoleLevel" style="width:auto"><option value="main">Main</option><option value="also">Also OK</option></select>
+      <button onclick="addRole()">Add</button>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Always reject</h3>
+    <table id="excludeTable"></table>
+    <div class="row">
+      <input type="text" id="newExclude" placeholder="Add an exclusion, e.g. Commission-only jobs" style="flex:1;min-width:180px" onkeydown="if(event.key==='Enter')addExclude()">
+      <button onclick="addExclude()">Add</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row" style="margin-top:0">
+      <button class="primary" onclick="savePrefs()">Save preferences</button>
+      <span class="hint" id="prefsDirty"></span>
+    </div>
+    <div class="msg" id="prefsMsg"></div>
+  </div>
+  <div class="card">
+    <h3>What the bot has learned <span class="hint">(your Keep / Reject clicks and replies)</span></h3>
+    <div id="feedback">Loading…</div>
+  </div>
+</section>
+
 <section id="search">
-  <h2>You &amp; search</h2>
-  <p class="lead">Who the ads are for, the language, the area, and your profile.</p>
+  <h2>Profile &amp; area</h2>
+  <p class="lead">Who the ads are for, the language, what reaches Telegram, the area, and your profile.</p>
   <div class="card">
     <h3>Basics</h3>
     <div class="grid2">
@@ -134,8 +172,6 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
     <input type="text" id="areaExtra">
     <label for="areaCounties">Counties <span class="hint">comma-separated (default: Oslo, Akershus)</span></label>
     <input type="text" id="areaCounties">
-    <label for="NAV_TOKEN">NAV private token <span class="hint">optional; empty = public token. <span id="NAV_TOKEN_state"></span></span></label>
-    <input type="password" id="NAV_TOKEN" autocomplete="off" placeholder="leave empty to keep the current value">
     <div class="row"><button class="primary" onclick="saveSearch()">Save</button></div>
     <div class="msg" id="searchMsg"></div>
   </div>
@@ -149,7 +185,7 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
 </section>
 
 <section id="telegram">
-  <h2>Telegram</h2>
+  <h2>Output: Telegram</h2>
   <p class="lead">The bot that sends you the ads, with Keep / Reject buttons.</p>
   <div class="card">
     <h3>1. Create your bot</h3>
@@ -227,40 +263,53 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
   </div>
 </section>
 
-<section id="finn">
-  <h2>Finn alerts <span class="hint">(optional)</span></h2>
-  <p class="lead">Finn.no ads arrive through your own Finn alert emails, read from Gmail.</p>
+<section id="sources">
+  <h2>Sources</h2>
+  <p class="lead">Where ads come from. Switch each source on or off; the next run uses the change.</p>
+
   <div class="card">
-    <h3>1. Create the alert on Finn</h3>
-    <ol class="steps">
-      <li>On <a href="https://www.finn.no/" target="_blank" rel="noopener">finn.no</a>, search jobs with your area and categories, then save the search as an alert (Søkeagent) sent by email.</li>
-      <li>Use the Gmail address below to receive it.</li>
-    </ol>
-    <p class="hint">By default the tool reads only those emails and never downloads finn.no pages: Finn's terms forbid automated access without written permission. Finn ads then show title, employer and place only; open the link to read them. See step 3 to read the full ads.</p>
+    <h3>NAV / Arbeidsplassen</h3>
+    <p class="hint">Norway's public job feed, with the full ad text. No setup needed.</p>
+    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="SOURCE_NAV"> Use NAV</label>
+    <label for="NAV_TOKEN">Private token <span class="hint">optional; empty = public token. <span id="NAV_TOKEN_state"></span> For long-term use, ask nav.team.arbeidsplassen@nav.no.</span></label>
+    <input type="password" id="NAV_TOKEN" autocomplete="off" placeholder="leave empty to keep the current value">
+    <div class="row"><button class="primary" onclick="saveSources(['SOURCE_NAV','NAV_TOKEN'], 'navMsg')">Save</button></div>
+    <div class="msg" id="navMsg"></div>
   </div>
+
   <div class="card">
-    <h3>2. Connect Gmail</h3>
+    <h3>Gmail <span class="hint">(for Finn and LinkedIn alert emails)</span></h3>
     <ol class="steps">
       <li>Turn on 2-step verification on your Google account.</li>
       <li>Create an <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">app password</a> and paste it below (not your normal password).</li>
     </ol>
+    <p class="hint">The tool opens this mailbox read-only and only reads the alert emails from Finn and LinkedIn.</p>
     <div class="grid2">
       <div><label for="GMAIL_ADDRESS">Gmail address</label><input type="text" id="GMAIL_ADDRESS" autocomplete="off"></div>
       <div><label for="GMAIL_APP_PASSWORD">App password <span class="hint" id="GMAIL_APP_PASSWORD_state"></span></label>
         <input type="password" id="GMAIL_APP_PASSWORD" autocomplete="off" placeholder="leave empty to keep the current value"></div>
     </div>
+    <div class="row"><button class="primary" onclick="saveFields(['GMAIL_ADDRESS','GMAIL_APP_PASSWORD'], 'gmMsg')">Save</button></div>
+    <div class="msg" id="gmMsg"></div>
+  </div>
+
+  <div class="card">
+    <h3>Finn.no</h3>
+    <ol class="steps">
+      <li>On <a href="https://www.finn.no/" target="_blank" rel="noopener">finn.no</a>, search jobs with your area and categories, then save the search as an alert (Søkeagent) sent by email to the Gmail address above.</li>
+      <li>Optional: filter those emails into a Gmail label and enter it below.</li>
+    </ol>
+    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="SOURCE_FINN"> Use Finn alert emails</label>
     <label for="GMAIL_FINN_LABEL">Gmail label <span class="hint">optional; empty = INBOX</span></label>
     <input type="text" id="GMAIL_FINN_LABEL">
     <div class="row">
-      <button class="primary" onclick="saveFields(['GMAIL_ADDRESS','GMAIL_APP_PASSWORD','GMAIL_FINN_LABEL'], 'gmMsg')">Save</button>
-      <button onclick="testGmail()">Test connection</button>
+      <button class="primary" onclick="saveSources(['SOURCE_FINN','GMAIL_FINN_LABEL'], 'finnMsg')">Save</button>
+      <button onclick="testGmail()">Check Finn alerts</button>
     </div>
-    <div class="msg" id="gmMsg"></div>
-  </div>
-  <div class="card">
-    <h3>3. Read the full ads <span class="hint">(only with Finn's written permission)</span></h3>
-    <p>Turn this on <b>only if Finn has given you written permission</b>, for example by email from Finn's customer service. Ask them first: explain that it is for your personal job search, once a day, only the ads from your own alerts.</p>
-    <p class="hint">When on, each new ad page from your alert emails is downloaded once, during the morning run, at least 5 seconds apart, with your contact email in the request header so Finn can identify it. Only the description is kept, on this computer. Never share it, and delete it when your job search ends.</p>
+    <div class="msg" id="finnMsg"></div>
+    <h3 style="margin-top:20px">Read the full Finn ads <span class="hint">(only with Finn's written permission)</span></h3>
+    <p>By default only the alert emails are read: title, employer and place. Turn this on <b>only if Finn has given you written permission</b> (ask their customer service: personal job search, once a day, only the ads from your own alerts).</p>
+    <p class="hint">When on, each new ad page from your alert emails is downloaded once, during the morning run, at least 5 seconds apart, with your contact email in the request header. Only the description is kept, on this computer. Never share it, and delete it when your job search ends.</p>
     <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="FINN_FETCH_PAGES"> Finn gave me written permission: download the ad pages</label>
     <label for="FINN_CONTACT_EMAIL">Contact email <span class="hint">sent to Finn with each request, as they ask</span></label>
     <input type="text" id="FINN_CONTACT_EMAIL" autocomplete="off">
@@ -269,6 +318,24 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
       <button onclick="purgeFinn()">Delete stored Finn descriptions</button>
     </div>
     <div class="msg" id="finnPagesMsg"></div>
+  </div>
+
+  <div class="card">
+    <h3>LinkedIn</h3>
+    <ol class="steps">
+      <li>On LinkedIn, search jobs (keywords, location), then turn on <b>Job alert</b> with daily emails.</li>
+      <li>Make sure LinkedIn sends them to the Gmail address above (LinkedIn settings, email address).</li>
+      <li>When the first alert email has arrived, click <b>Check LinkedIn alerts</b>.</li>
+    </ol>
+    <p class="hint">Only the alert emails are read: title, company and place. The tool never opens linkedin.com pages (LinkedIn's terms forbid scraping), so LinkedIn ads arrive with a "limited preview" note; open the link to read them.</p>
+    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="SOURCE_LINKEDIN"> Use LinkedIn alert emails</label>
+    <label for="GMAIL_LINKEDIN_LABEL">Gmail label <span class="hint">optional; empty = INBOX</span></label>
+    <input type="text" id="GMAIL_LINKEDIN_LABEL">
+    <div class="row">
+      <button class="primary" onclick="saveSources(['SOURCE_LINKEDIN','GMAIL_LINKEDIN_LABEL'], 'liMsg')">Save</button>
+      <button onclick="testLinkedIn()">Check LinkedIn alerts</button>
+    </div>
+    <div class="msg" id="liMsg"></div>
   </div>
 </section>
 
@@ -344,6 +411,7 @@ function show() {
   document.querySelectorAll("nav a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#" + id));
   if (id === "overview" || id === "ai" || id === "schedule") refreshStatus();
   if (id === "history") loadHistory();
+  if (id === "prefs") loadPrefs();
   if (id === "run") pollRun();
 }
 window.addEventListener("hashchange", show);
@@ -351,8 +419,12 @@ window.addEventListener("hashchange", show);
 // ---------- settings ----------
 async function loadSettings() {
   settings = await api("/api/settings");
-  for (const [k, v] of Object.entries(settings.values)) if ($(k) && !["LANGUAGE", "AI_PROVIDER", "FINN_FETCH_PAGES"].includes(k)) $(k).value = v;
-  $("FINN_FETCH_PAGES").checked = ["1", "true", "yes", "on"].includes((settings.values.FINN_FETCH_PAGES || "").toLowerCase());
+  for (const [k, v] of Object.entries(settings.values)) if ($(k) && $(k).type !== "checkbox" && !["LANGUAGE", "AI_PROVIDER"].includes(k)) $(k).value = v;
+  const on = (k, dflt) => { const v = (settings.values[k] || "").toLowerCase(); return v ? ["1", "true", "yes", "on"].includes(v) : dflt; };
+  $("FINN_FETCH_PAGES").checked = on("FINN_FETCH_PAGES", false);
+  $("SOURCE_NAV").checked = on("SOURCE_NAV", true);
+  $("SOURCE_FINN").checked = on("SOURCE_FINN", true);
+  $("SOURCE_LINKEDIN").checked = on("SOURCE_LINKEDIN", false);
   $("LANGUAGE").value = settings.values.LANGUAGE || "en";
   $("AI_PROVIDER").value = settings.values.AI_PROVIDER || "claude";
   $("MESSAGE_MIN_SCORE").value = settings.values.MESSAGE_MIN_SCORE || "4";
@@ -377,7 +449,7 @@ async function saveSearch() {
   await busy(btn, async () => {
     try {
       const body = {
-        CANDIDATE_NAME: $("CANDIDATE_NAME").value, LANGUAGE: $("LANGUAGE").value, NAV_TOKEN: $("NAV_TOKEN").value,
+        CANDIDATE_NAME: $("CANDIDATE_NAME").value, LANGUAGE: $("LANGUAGE").value,
         MESSAGE_MIN_SCORE: $("MESSAGE_MIN_SCORE").value, DIGEST_MIN_SCORE: $("DIGEST_MIN_SCORE").value,
         NORWEGIAN_REQUIRED: $("NORWEGIAN_REQUIRED").value,
         area: {
@@ -449,12 +521,12 @@ async function testTelegram() {
 async function testGmail() {
   const btn = event.target;
   await busy(btn, async () => {
-    msg("gmMsg", "info", "Connecting to Gmail…");
+    msg("finnMsg", "info", "Connecting to Gmail…");
     try {
       const r = (await api("/api/gmail/test", {})).result;
-      msg("gmMsg", "ok", `Connected (${r.mailbox}). Last ${r.days} days: ${r.emails} Finn alert email(s), ${r.ads} ad(s), ${r.in_area} in your area.` +
+      msg("finnMsg", "ok", `Connected (${r.mailbox}). Last ${r.days} days: ${r.emails} Finn alert email(s), ${r.ads} ad(s), ${r.in_area} in your area.` +
         (r.emails ? "" : " No Finn alert yet: check that the alert is sent to this address."));
-    } catch (e) { msg("gmMsg", "bad", e.message); }
+    } catch (e) { msg("finnMsg", "bad", e.message); }
   });
 }
 
@@ -472,6 +544,81 @@ async function purgeFinn() {
   if (!confirm("Delete every stored Finn ad description and summary? This cannot be undone.")) return;
   try { const r = await api("/api/finn/purge", {}); msg("finnPagesMsg", "ok", `Deleted for ${r.count} Finn ad(s).`); }
   catch (e) { msg("finnPagesMsg", "bad", e.message); }
+}
+
+function sourcesLine(s) {
+  const on = [s.sources.nav && "NAV", s.sources.finn && "Finn", s.sources.linkedin && "LinkedIn"].filter(Boolean);
+  const needsGmail = (s.sources.finn || s.sources.linkedin) && !s.gmail.configured;
+  return (on.length ? esc(on.join(", ")) : "None switched on") + (needsGmail ? " (Gmail not set up: Finn and LinkedIn are skipped)" : "");
+}
+
+// ---------- preferences ----------
+let prefs = { target_roles: [], exclude: [] }, feedbackRows = [], prefsChanged = false;
+async function loadPrefs() {
+  prefs = (await api("/api/preferences")).preferences;
+  prefsChanged = false;
+  renderPrefs();
+  try { feedbackRows = (await api("/api/feedback")).rows; } catch { feedbackRows = []; }
+  renderPrefs();
+}
+function matches(text) { const f = $("prefFilter").value.trim().toLowerCase(); return !f || String(text).toLowerCase().includes(f); }
+function renderPrefs() {
+  $("rolesTable").innerHTML = prefs.target_roles.map((r, i) => matches(r.name) ? `<tr><td>${esc(r.name)}</td>
+    <td style="width:150px"><select onchange="prefs.target_roles[${i}].level=this.value;markPrefs()"><option value="main" ${r.level === "main" ? "selected" : ""}>Main</option><option value="also" ${r.level === "also" ? "selected" : ""}>Also OK</option></select></td>
+    <td style="width:90px"><button onclick="prefs.target_roles.splice(${i},1);markPrefs()">Remove</button></td></tr>` : "").join("")
+    || `<tr><td class="hint">${prefs.target_roles.length ? "No role matches the filter." : "No role yet: add the jobs you are looking for."}</td></tr>`;
+  $("excludeTable").innerHTML = prefs.exclude.map((x, i) => matches(x) ? `<tr><td>${esc(x)}</td>
+    <td style="width:90px"><button onclick="prefs.exclude.splice(${i},1);markPrefs()">Remove</button></td></tr>` : "").join("")
+    || `<tr><td class="hint">${prefs.exclude.length ? "No exclusion matches the filter." : "Nothing excluded yet."}</td></tr>`;
+  const fb = feedbackRows.filter(r => matches(`${r.title} ${r.employer} ${r.notes || ""} ${r.decision || ""}`));
+  $("feedback").innerHTML = !feedbackRows.length ? "<p class=\"hint\">No click or reply yet. Click Keep / Reject in Telegram, or reply to an ad with a reason.</p>" :
+    !fb.length ? "<p class=\"hint\">Nothing matches the filter.</p>" :
+    "<table><tr><th>Ad</th><th>Decision</th><th>Comment</th></tr>" + fb.map(r =>
+      `<tr><td><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a><br><span class="hint">${esc(r.employer)}</span></td>` +
+      `<td><span class="badge ${r.decision || "none"}">${r.decision === "keep" ? "Kept" : r.decision === "reject" ? "Rejected" : "None"}</span></td><td>${esc(r.notes || "")}</td></tr>`).join("") + "</table>";
+  $("prefsDirty").textContent = prefsChanged ? "Unsaved changes" : "";
+}
+function markPrefs() { prefsChanged = true; renderPrefs(); }
+function addRole() {
+  const name = $("newRole").value.trim(); if (!name) return;
+  prefs.target_roles.push({ name, level: $("newRoleLevel").value }); $("newRole").value = ""; markPrefs();
+}
+function addExclude() {
+  const x = $("newExclude").value.trim(); if (!x) return;
+  prefs.exclude.push(x); $("newExclude").value = ""; markPrefs();
+}
+async function savePrefs() {
+  const btn = event.target;
+  await busy(btn, async () => {
+    try { prefs = (await api("/api/preferences", { preferences: prefs })).preferences; prefsChanged = false; renderPrefs(); msg("prefsMsg", "ok", "Saved. The next run uses these preferences."); }
+    catch (e) { msg("prefsMsg", "bad", e.message); }
+  });
+}
+
+// ---------- sources ----------
+async function saveSources(keys, msgId) {
+  const btn = event.target;
+  await busy(btn, async () => {
+    try {
+      const body = {};
+      keys.forEach(k => body[k] = $(k).type === "checkbox" ? ($(k).checked ? "true" : "false") : $(k).value);
+      await api("/api/settings", body);
+      await loadSettings();
+      msg(msgId, "ok", "Saved. The next run uses this.");
+    } catch (e) { msg(msgId, "bad", e.message); }
+  });
+}
+async function testLinkedIn() {
+  const btn = event.target;
+  await busy(btn, async () => {
+    msg("liMsg", "info", "Connecting to Gmail…");
+    try {
+      const r = (await api("/api/linkedin/test", {})).result;
+      msg("liMsg", r.emails ? "ok" : "info", r.emails
+        ? `Last ${r.days} days: ${r.emails} LinkedIn alert email(s), ${r.ads} job(s) read, ${r.in_area} in your area.` + (r.ads ? "" : " The jobs could not be read from these emails: tell the developer, the email format may differ.")
+        : `No LinkedIn alert email in the last ${r.days} days (${r.mailbox}). Create the alert on LinkedIn and check that it is sent to this Gmail address.`);
+    } catch (e) { msg("liMsg", "bad", e.message); }
+  });
 }
 
 // ---------- AI ----------
@@ -511,7 +658,7 @@ async function refreshStatus() {
     (s.ai.provider === "gemini"
       ? li(s.ai.gemini_key ? "ok" : "bad", "AI: Gemini", s.ai.gemini_key ? `API key saved, model ${esc(s.ai.gemini_model)} (use Test key to check)` : "API key missing", "ai")
       : li(claudeLine[0], "AI: Claude", claudeLine[1], "ai")) +
-    li(s.gmail.configured ? "ok" : "off", "Finn (Gmail)", s.gmail.configured ? "Configured (use Test to check)" : "Optional, not set up", "finn") +
+    li(s.sources.nav || s.sources.finn || s.sources.linkedin ? "ok" : "bad", "Sources", sourcesLine(s), "sources") +
     li(sched[0], "Schedule", sched[1], "schedule");
   const d = s.db || {};
   const statsHtml = [["ads", "ads seen"], ["sorted", "sorted"], ["relevant", "relevant"], ["sent", "sent"], ["kept", "kept"], ["rejected", "rejected"]]

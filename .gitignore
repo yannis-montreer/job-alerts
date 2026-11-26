@@ -3,6 +3,7 @@
 
 # Personal data: search profile, CVs, database, logs
 profile.md
+preferences.json
 cv*
 *.pdf
 *.docx
