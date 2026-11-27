@@ -404,22 +404,31 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
 
 <section id="schedule">
   <h2>Schedule</h2>
-  <p class="lead">Windows runs the tool every morning, and collects your Telegram clicks for a few hours after.</p>
+  <p class="lead">When each profile receives its ads. Every day at that time, new ads are fetched, sorted for the profile and sent to its Telegram bot.</p>
   <div class="card">
-    <h3>Current tasks</h3>
-    <div id="tasks">Loading…</div>
+    <h3>Messages for this profile</h3>
+    <div class="grid2">
+      <div><label for="sendTime">Every day at</label><input type="time" id="sendTime" value="07:30"></div>
+      <div><label>Next and last</label><div id="sendInfo" class="hint" style="padding-top:8px">…</div></div>
+    </div>
+    <div class="row"><button class="primary" onclick="saveSendTime()">Save</button></div>
+    <div class="msg" id="sendMsg"></div>
   </div>
   <div class="card">
-    <h3>Create or update</h3>
+    <h3>All profiles</h3>
+    <div id="allTimes">Loading…</div>
+  </div>
+  <div class="card">
+    <h3>Background</h3>
+    <ul class="checks" id="bgChecks"><li>Loading…</li></ul>
+    <p class="hint" style="margin-top:12px">The always-on dashboard saves each Telegram tap within seconds. The backup click check reads the taps every 10 minutes during a window, for times when the always-on dashboard is not running.</p>
     <div class="grid2">
-      <div><label for="tMorning">Morning run</label><input type="time" id="tMorning" value="07:30"></div>
-      <div><label for="tCatch">Click collection starts</label><input type="time" id="tCatch" value="07:40"></div>
-      <div><label for="tHours">Collection window <span class="hint">hours, every 10 min</span></label><input type="number" id="tHours" value="2.85" min="0.25" max="23" step="0.05"></div>
-      <div><label for="tPrefix">Task name prefix</label><input type="text" id="tPrefix" value="JobAlerts"></div>
+      <div><label for="tCatch">Backup click check from</label><input type="time" id="tCatch" value="07:40"></div>
+      <div><label for="tHours">For <span class="hint">hours</span></label><input type="number" id="tHours" value="2.85" min="0.25" max="23" step="0.05"></div>
     </div>
-    <div class="row"><button class="primary" onclick="createTasks()">Create / update tasks</button></div>
+    <div class="row"><button onclick="saveCatchup()">Save</button></div>
     <div class="msg" id="taskMsg"></div>
-    <p class="hint" style="margin-top:12px">Tasks run only while your Windows session is open (locked screen is fine; after a reboot, log in). If the computer was off at the morning time, the run starts as soon as possible.</p>
+    <p class="hint" style="margin-top:12px">Everything runs only while your Windows session is open (locked screen is fine; after a reboot, log in). If the computer was off at a profile's time, its run starts as soon as possible.</p>
   </div>
 </section>
 
@@ -589,7 +598,8 @@ function show() {
   const id = (location.hash || "#overview").slice(1);
   document.querySelectorAll("section").forEach(s => s.classList.toggle("active", s.id === id));
   document.querySelectorAll("nav a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#" + id));
-  if (id === "overview" || id === "ai" || id === "schedule") refreshStatus();
+  if (id === "overview" || id === "ai") refreshStatus();
+  if (id === "schedule") loadSchedule();
   if (id === "history") loadHistory();
   if (id === "prefs") loadPrefs();
   if (id === "run") pollRun();
@@ -872,9 +882,9 @@ async function refreshStatus() {
   const tg = s.telegram.token && s.telegram.chat_id ? ["ok", (s.telegram.listener ? tr("Listening: taps are saved within seconds") : tr("Token and chat id saved (use Test to check)"))] :
     s.telegram.token ? ["warn", tr("Token saved, chat id missing")] : ["bad", tr("Not set up")];
   const prof = !s.profile.exists ? ["bad", tr("Missing")] : s.profile.is_template ? ["warn", tr("Still the template")] : ["ok", tr("Filled in")];
-  const full = s.tasks.filter(t => t.kind === "full run"), coll = s.tasks.filter(t => t.kind === "catch-up");
+  const mine = s.schedule && s.schedule.profiles.find(x => x.id === PROFILE);
   const sched = s.tasks_error ? ["warn", tr("Could not read tasks: {err}", { err: esc(s.tasks_error) })] :
-    full.length ? ["ok", tr("Morning run at {start}, next {next}", { start: esc(full[0].start), next: esc(full[0].next) }) + (coll.length ? tr("; click collection on") : tr("; no click collection"))] :
+    mine && mine.scheduled ? ["ok", tr("Messages every day at {time}, next {next}", { time: esc(mine.time), next: esc(mine.next) })] :
     ["bad", tr("No scheduled run")];
   const alerts = (settings && settings.values.LANGUAGE) || "en";
   $("checks").innerHTML =
@@ -902,12 +912,6 @@ async function refreshStatus() {
   // Show the chosen AI first; the other card stays available below.
   const ai = $("ai"), first = s.ai.provider === "gemini" ? $("geminiCard") : $("claudeCard");
   ai.insertBefore(first, ai.querySelector(".card").nextSibling);
-  $("tasks").innerHTML = s.tasks_error ? `<p class="hint">${esc(s.tasks_error)}</p>` : !s.tasks.length ? `<p>${tr("No task yet. Create them below.")}</p>` :
-    `<table><tr><th>${tr("Task")}</th><th>${tr("Type")}</th><th>${tr("Starts")}</th><th>${tr("Repeats")}</th><th>${tr("Next run")}</th><th>${tr("Last run")}</th><th></th></tr>` +
-    s.tasks.map(t => `<tr><td>${esc(t.name)}</td><td>${esc(tr(t.kind))}</td><td>${esc(t.start)}</td><td>${esc(t.every.replace("PT", "").toLowerCase())}</td><td>${esc(t.next)}</td><td>${esc(t.last)}${t.last ? (t.result === 0 ? " ✓" : " " + tr("(code {code})", { code: esc(t.result) })) : ""}</td>` +
-      `<td><button onclick="removeTask('${esc(t.name)}')">${tr("Remove")}</button></td></tr>`).join("") + "</table>";
-  if (full.length) $("tMorning").value = full[0].start;
-  if (coll.length) $("tCatch").value = coll[0].start;
 }
 
 // ---------- phone access ----------
@@ -953,23 +957,37 @@ async function startServe() {
 }
 
 // ---------- schedule ----------
-async function createTasks() {
+const lastRun = x => !x.last ? tr("never") : x.last + (x.result === 0 ? " ✓" : " " + tr("(code {code})", { code: esc(x.result) }));
+function renderSchedule(d) {
+  const mine = d.profiles.find(x => x.id === PROFILE) || d.profiles[0];
+  if (mine) {
+    $("sendTime").value = mine.time;
+    $("sendInfo").textContent = mine.scheduled ? tr("Next: {next} · last: {last}", { next: mine.next || "?", last: lastRun(mine) }) : tr("Not scheduled yet: click Save.");
+  }
+  $("allTimes").innerHTML = `<table><tr><th>${tr("Profile")}</th><th>${tr("Messages at")}</th><th>${tr("Next")}</th><th>${tr("Last")}</th></tr>` +
+    d.profiles.map(x => `<tr><td class="notr">${esc(x.name)}</td><td>${x.scheduled ? esc(x.time) : tr("not scheduled")}</td><td>${esc(x.next)}</td><td>${esc(lastRun(x))}</td></tr>`).join("") + "</table>";
+  $("bgChecks").innerHTML =
+    li(d.dashboard ? "ok" : "warn", tr("Always-on dashboard"), d.dashboard ? tr("Running: taps are saved within seconds") : tr("Not running (Phone access page)"), d.dashboard ? null : "phone") +
+    li(d.catchup ? "ok" : "off", tr("Backup click check"), d.catchup ? tr("Every 10 min from {start}, next {next}", { start: esc(d.catchup.start), next: esc(d.catchup.next) }) : tr("Off"));
+  if (d.catchup) $("tCatch").value = d.catchup.start;
+}
+async function loadSchedule() {
+  try { renderSchedule(await api("/api/schedule")); }
+  catch (e) { $("allTimes").textContent = e.message; }
+}
+async function saveSendTime() {
   const btn = event.target;
   await busy(btn, async () => {
-    try {
-      await api("/api/tasks", { morning: $("tMorning").value, catchup_start: $("tCatch").value, catchup_hours: parseFloat($("tHours").value), prefix: $("tPrefix").value });
-      msg("taskMsg", "ok", tr("Tasks created or updated."));
-      await refreshStatus();
-      const names = statusData.tasks.map(t => t.name), p = $("tPrefix").value;
-      const others = names.filter(n => !n.startsWith(p + "-"));
-      if (others.length) msg("taskMsg", "info", tr("Done. Other tasks also run this tool: {names}. Remove them if they are duplicates.", { names: others.join(", ") }));
-    } catch (e) { msg("taskMsg", "bad", e.message); }
+    try { renderSchedule(await api("/api/schedule", { time: $("sendTime").value })); msg("sendMsg", "ok", tr("Saved: messages every day at {time}.", { time: $("sendTime").value })); }
+    catch (e) { msg("sendMsg", "bad", e.message); }
   });
 }
-async function removeTask(name) {
-  if (!confirm(tr('Remove the scheduled task "{name}"?', { name }))) return;
-  try { await api("/api/tasks/remove", { name }); toast(tr("Task removed.")); refreshStatus(); }
-  catch (e) { toast(e.message); }
+async function saveCatchup() {
+  const btn = event.target;
+  await busy(btn, async () => {
+    try { renderSchedule(await api("/api/schedule/catchup", { start: $("tCatch").value, hours: parseFloat($("tHours").value) })); msg("taskMsg", "ok", tr("Saved.")); }
+    catch (e) { msg("taskMsg", "bad", e.message); }
+  });
 }
 
 // ---------- run ----------

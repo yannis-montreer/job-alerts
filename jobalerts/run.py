@@ -15,6 +15,7 @@ import logging.handlers
 import os
 import subprocess
 import sys
+import time
 import traceback
 from datetime import datetime, timedelta, timezone
 
@@ -101,7 +102,9 @@ def run_profile(con, p) -> int:
         return analysed
 
 
-def run(collect_only: bool) -> int:
+def run(collect_only: bool, profile_id: str | None = None) -> int:
+    """collect_only: only Telegram clicks. profile_id: sort and send for this profile only
+    (each profile has its own scheduled time); new ads are still fetched for every profile."""
     con = db.connect()
 
     # 1. Clicks and replies, for every bot.
@@ -128,7 +131,10 @@ def run(collect_only: bool) -> int:
     # 3-4. Per profile: one AI call to sort its new ads, then send them with its bot.
     #      A profile that fails (missing profile text, bot not set up...) does not stop the others.
     failed = []
-    for p in profiles.all_profiles():
+    selected = [p for p in profiles.all_profiles() if profile_id in (None, p.id)]
+    if profile_id and not selected:
+        raise RuntimeError(f"Unknown profile: {profile_id}")
+    for p in selected:
         missing = profiles.issue(p)
         if missing:  # a profile being set up in the dashboard: not an error
             logging.info("Profile %s skipped: %s", p.name or p.id, missing)
@@ -145,7 +151,7 @@ def run(collect_only: bool) -> int:
                 pass
 
     # Source errors and the login warning: once per bot.
-    ready = [p for p in profiles.all_profiles() if not profiles.issue(p)]
+    ready = [p for p in selected if not profiles.issue(p)]
     for bot_id in dict.fromkeys(p.bot for p in ready):
         owner = next(p for p in ready if p.bot == bot_id)
         try:
@@ -166,16 +172,53 @@ def send_kits(con):
         logging.error("Application kits failed:\n%s", scrub(traceback.format_exc()))
 
 
+class RunLock:
+    """One full run at a time: profiles scheduled at the same minute run one after the other
+    (sources are fetched once, Finn pages are never requested twice)."""
+    def __init__(self, wait_s: int = 1500, poll_s: float = 5):
+        self.path = config.ROOT / "data" / "run.lock"
+        self.wait_s, self.poll_s = wait_s, poll_s
+        self.fh = None
+
+    def __enter__(self):
+        import msvcrt
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.fh = open(self.path, "a+")
+        deadline = time.time() + self.wait_s
+        while True:
+            try:
+                self.fh.seek(0)
+                msvcrt.locking(self.fh.fileno(), msvcrt.LK_NBLCK, 1)
+                return self
+            except OSError:
+                if time.time() > deadline:
+                    raise RuntimeError("Another run has been going on for too long")
+                time.sleep(self.poll_s)
+
+    def __exit__(self, *exc):
+        import msvcrt
+        try:
+            self.fh.seek(0)
+            msvcrt.locking(self.fh.fileno(), msvcrt.LK_UNLCK, 1)
+        finally:
+            self.fh.close()
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--collect-only", action="store_true")
     ap.add_argument("--console", action="store_true", help="also log to the console")
+    ap.add_argument("--profile", help="sort and send for this profile only (e.g. p2)")
     args = ap.parse_args(argv)
     setup_logging(args.console)
-    mode = "catch-up" if args.collect_only else "full"
+    mode = "catch-up" if args.collect_only else ("full" + (f" {args.profile}" if args.profile else ""))
     logging.info("=== %s run ===", mode)
     try:
-        code = run(args.collect_only)
+        if args.collect_only:
+            code = run(True)
+        else:
+            with RunLock():
+                code = run(False, args.profile)
         logging.info("=== %s run done ===", mode)
         return code
     except Exception as e:

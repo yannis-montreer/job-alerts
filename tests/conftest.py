@@ -47,6 +47,22 @@ def isolated_preferences(tmp_path, monkeypatch):
     monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")  # never the real profile files
 
 
+from jobalerts import dashboard as _dashboard  # noqa: E402
+
+REAL_LIST_TASKS = _dashboard.list_tasks  # for the test of its parsing, with a fake PowerShell
+
+
+@pytest.fixture(autouse=True)
+def no_windows_tasks(monkeypatch):
+    """Never read or change this computer's scheduled tasks."""
+    from jobalerts import dashboard
+
+    def blocked(*a, **k):
+        raise AssertionError("a test tried to run PowerShell")
+    monkeypatch.setattr(dashboard, "powershell", blocked)
+    monkeypatch.setattr(dashboard, "list_tasks", lambda: [])
+
+
 @pytest.fixture
 def con(tmp_path, monkeypatch):
     """A fresh SQLite database in a temp folder."""

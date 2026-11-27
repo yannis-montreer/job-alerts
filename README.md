@@ -237,6 +237,11 @@ without logging in is not). If the computer was off at 07:30, the run starts as 
 
 Run the morning task by hand: `Start-ScheduledTask JobAlerts-Morning`.
 
+With several profiles, set each profile's message time on the dashboard's **Schedule** page: it
+replaces the morning task with one task per profile (`JobAlerts-p1`, `JobAlerts-p2`...), each
+running `python -m jobalerts.run --profile <id>` at that profile's time. Runs that start at the
+same minute wait for each other, so new ads are fetched once.
+
 ## Files
 
 | Path | What |
@@ -256,6 +261,7 @@ Run the morning task by hand: `Start-ScheduledTask JobAlerts-Morning`.
 | `dashboard.cmd` | Double-click to open the dashboard |
 | `setup_tasks.ps1` | Creates the scheduled tasks |
 | `setup_dashboard_task.ps1` | Always-on dashboard task, for phone access |
+| `schedule_task.ps1` | One daily task (used by the Schedule page: one per profile, backup click check) |
 | `jobalerts/kit.py` | Application kit sent after a Keep click |
 | `jobalerts/listener.py` | Always-on Telegram listener (runs in the always-on dashboard) |
 | `jobalerts/static/` | App icons for the phone |

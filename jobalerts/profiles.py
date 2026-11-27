@@ -56,6 +56,7 @@ class Profile:
     finn_label: str = ""
     linkedin_label: str = ""
     bot: str = DEFAULT_BOT_ID
+    send_time: str = ""         # "HH:MM" the profile's ads are sent every day ("" = not set yet)
     profile_file: str = ""      # relative to the project folder
     preferences_file: str = ""
 

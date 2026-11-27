@@ -177,3 +177,37 @@ def test_profiles_being_set_up_are_skipped_quietly(con, two, monkeypatch):
     monkeypatch.setattr(run, "check_claude_login", lambda: None)
     monkeypatch.setattr(run.db, "connect", lambda: con)
     assert run.run(collect_only=False) == 0 and done == ["p1"]
+
+
+def test_a_profile_run_sorts_and_sends_only_that_profile(con, two, monkeypatch):
+    from jobalerts import run
+    done = []
+    monkeypatch.setattr(run, "run_profile", lambda c, p: done.append(p.id))
+    monkeypatch.setattr(run, "collect_clicks", lambda c: None)
+    monkeypatch.setattr(config, "SOURCE_NAV", False)
+    monkeypatch.setattr(config, "SOURCE_FINN", False)
+    monkeypatch.setattr(run, "check_claude_login", lambda: None)
+    monkeypatch.setattr(run.db, "connect", lambda: con)
+    assert run.run(collect_only=False, profile_id="p2") == 0 and done == ["p2"]
+    with pytest.raises(RuntimeError):
+        run.run(collect_only=False, profile_id="p7")
+
+
+def test_full_runs_wait_for_each_other(tmp_path, monkeypatch):
+    import threading
+    import time as _time
+    from jobalerts import run
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    order = []
+
+    def worker(name):
+        with run.RunLock(wait_s=30, poll_s=0.05):
+            order.append(f"{name}-in")
+            _time.sleep(0.3)
+            order.append(f"{name}-out")
+    a = threading.Thread(target=worker, args=("a",))
+    a.start()
+    _time.sleep(0.1)
+    worker("b")
+    a.join()
+    assert order == ["a-in", "a-out", "b-in", "b-out"]

@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from dotenv import dotenv_values
 
@@ -140,7 +142,7 @@ def test_save_settings_validation(client, body, error):
 
 
 def test_task_time_validation(client):
-    r = client.post("/api/tasks", base_url=BASE, headers=H, json={"morning": "7h30"})
+    r = client.post("/api/schedule", base_url=BASE, headers=H, json={"time": "7h30"})
     assert r.status_code == 400 and "HH:MM" in r.get_json()["error"]
 
 
@@ -324,3 +326,38 @@ def test_profiles_and_bots(client, env_file, monkeypatch, tmp_path):
     assert client.post("/api/settings", base_url=BASE, headers=h2, json={"BOT": "b9"}).status_code == 400
     assert client.post("/api/profiles/delete", base_url=BASE, headers=H, json={"id": "p2"}).status_code == 200
     assert client.post("/api/profiles/delete", base_url=BASE, headers=H, json={"id": "p1"}).status_code == 400
+
+
+def test_one_task_per_profile_at_its_time(client, env_file, monkeypatch):
+    from jobalerts import profiles
+    client.post("/api/settings", base_url=BASE, headers=H, json={"PROFILE_NAME": "Alex"})
+    client.post("/api/profiles", base_url=BASE, headers=H, json={"name": "Anna"})
+    tasks = [  # before: one morning task for every profile, an old catch-up, a task of a deleted profile
+        dict(name="Old-Morning", kind="full run", profile=None, start="07:15", next="n", last="", result=None, every=""),
+        dict(name="Old-CatchUp", kind="catch-up", profile=None, start="07:40", next="n", last="", result=0, every="PT10M"),
+        dict(name="JobAlerts-p9", kind="profile", profile="p9", start="06:00", next="n", last="", result=0, every=""),
+    ]
+    calls = []
+    monkeypatch.setattr(dashboard, "list_tasks", lambda: tasks)
+    monkeypatch.setattr(dashboard, "schedule_task", lambda name, arguments="", at="", remove=False, **kw:
+                        calls.append((name, arguments, at, remove)) or "")
+    monkeypatch.setattr(dashboard, "PYTHONW", env_file)  # any existing file
+    r = client.post("/api/schedule", base_url=BASE, headers=H | {"X-Profile": "p2"}, json={"time": "09:05"})
+    assert r.status_code == 200, r.get_json()
+    assert ("JobAlerts-p1", "-m jobalerts.run --profile p1", "07:15", False) in calls  # keeps the old time
+    assert ("JobAlerts-p2", "-m jobalerts.run --profile p2", "09:05", False) in calls
+    assert ("Old-Morning", "", "", True) in calls and ("JobAlerts-p9", "", "", True) in calls
+    assert not any(c[0] == "Old-CatchUp" for c in calls)
+    assert [p.send_time for p in profiles.all_profiles()] == ["07:15", "09:05"]
+    calls.clear()
+    r = client.post("/api/schedule/catchup", base_url=BASE, headers=H, json={"start": "08:00", "hours": 2})
+    assert r.status_code == 200
+    assert calls == [("Old-CatchUp", "", "", True), ("JobAlerts-CatchUp", "-m jobalerts.run --collect-only", "08:00", False)]
+
+
+def test_task_kinds_from_arguments(monkeypatch):
+    monkeypatch.setattr(dashboard, "powershell", lambda cmd, timeout=60: json.dumps([
+        {"name": "a", "args": "-m jobalerts.run --profile p2"}, {"name": "b", "args": "-m jobalerts.run --collect-only"},
+        {"name": "c", "args": "-m jobalerts.run"}]))
+    from conftest import REAL_LIST_TASKS
+    assert [(t["kind"], t["profile"]) for t in REAL_LIST_TASKS()] == [("profile", "p2"), ("catch-up", None), ("full run", None)]

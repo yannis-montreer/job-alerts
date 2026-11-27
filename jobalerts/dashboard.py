@@ -254,7 +254,8 @@ def claude_status() -> dict:
 
 def powershell(command: str, timeout: int = 60) -> str:
     full = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; $ErrorActionPreference = 'Stop'; " + command
-    proc = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", full],
+    # Bypass for this process only: the tool's own .ps1 scripts are not signed.
+    proc = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", full],
                           capture_output=True, text=True, encoding="utf-8", timeout=timeout)
     if proc.returncode != 0:
         raise UserError((proc.stderr or proc.stdout).strip()[:400] or "PowerShell failed")
@@ -281,8 +282,69 @@ def list_tasks() -> list[dict]:
     )
     data = json.loads(out or "[]")
     for t in data:
-        t["kind"] = "catch-up" if "--collect-only" in (t.get("args") or "") else "full run"
+        args = t.get("args") or ""
+        m = re.search(r"--profile\s+(\S+)", args)
+        t["profile"] = m.group(1) if m else None
+        t["kind"] = "catch-up" if "--collect-only" in args else ("profile" if m else "full run")
     return data
+
+
+# ---------- schedule: one task per profile (its message time), plus the shared backup click check ----------
+
+TASK_PREFIX = "JobAlerts"
+HHMM = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
+
+
+def schedule_task(name: str, arguments: str = "", at: str = "07:30", every_minutes: int = 0,
+                  for_hours: float = 0, limit_minutes: int = 30, remove: bool = False) -> str:
+    script = ROOT / "schedule_task.ps1"
+    cmd = f"& {_ps_str(str(script))} -Name {_ps_str(name)}"
+    if remove:
+        return powershell(cmd + " -Remove", timeout=60)
+    cmd += (f" -Arguments {_ps_str(arguments)} -At {_ps_str(at)} -EveryMinutes {int(every_minutes)}"
+            f" -ForHours {float(for_hours)} -LimitMinutes {int(limit_minutes)}")
+    return powershell(cmd, timeout=60)
+
+
+def effective_time(p, legacy_start: str = "") -> str:
+    return p.send_time or legacy_start or "07:30"
+
+
+def schedule_state(tasks=None) -> dict:
+    tasks = list_tasks() if tasks is None else tasks
+    legacy = [t for t in tasks if t["kind"] == "full run"]
+    by_profile = {t["profile"]: t for t in tasks if t["kind"] == "profile"}
+    catchup = next((t for t in tasks if t["kind"] == "catch-up"), None)
+    rows = []
+    for p in profiles.all_profiles():
+        task = by_profile.get(p.id) or (legacy[0] if legacy else None)
+        rows.append(dict(id=p.id, name=p.name or p.id, time=effective_time(p, legacy[0]["start"] if legacy else ""),
+                         scheduled=bool(task), next=(task or {}).get("next", ""), last=(task or {}).get("last", ""),
+                         result=(task or {}).get("result")))
+    return dict(profiles=rows, catchup=catchup and {k: catchup[k] for k in ("start", "every", "next", "last", "result")},
+                dashboard=service_running())
+
+
+def ensure_profile_tasks():
+    """One task per profile at its message time; the old all-profiles morning task is removed."""
+    tasks = list_tasks()
+    legacy = [t for t in tasks if t["kind"] == "full run"]
+    legacy_start = legacy[0]["start"] if legacy else ""
+    data = profiles.load()
+    for p in data["profiles"]:
+        p.send_time = effective_time(p, legacy_start)
+    profiles.save(data)
+    by_profile = {t["profile"]: t for t in tasks if t["kind"] == "profile"}
+    for p in data["profiles"]:
+        task = by_profile.get(p.id)
+        if not task or task["start"] != p.send_time:
+            if task and task["name"] != f"{TASK_PREFIX}-{p.id}":
+                schedule_task(task["name"], remove=True)
+            schedule_task(f"{TASK_PREFIX}-{p.id}", f"-m jobalerts.run --profile {p.id}", p.send_time)
+    ids = {p.id for p in data["profiles"]}
+    for t in tasks:
+        if t["kind"] == "full run" or (t["kind"] == "profile" and t["profile"] not in ids):
+            schedule_task(t["name"], remove=True)
 
 
 def log_tail(n: int = 60) -> list[str]:
@@ -485,7 +547,17 @@ def create_profile():
                          language=data["profiles"][0].language)
     data["profiles"].append(p)
     profiles.save(data)
+    _sync_tasks_if_per_profile()
     return jsonify(ok=True, id=p.id)
+
+
+def _sync_tasks_if_per_profile():
+    """When profiles already have their own tasks, a new or deleted profile gets / loses its own."""
+    try:
+        if any(t["kind"] == "profile" for t in list_tasks()):
+            ensure_profile_tasks()
+    except Exception as e:  # the profile change is saved anyway; the Schedule page can retry
+        print(f"schedule update failed: {str(e)[:200]}")
 
 
 @app.post("/api/profiles/delete")
@@ -499,6 +571,7 @@ def delete_profile():
         raise UserError("Unknown profile")
     data["profiles"] = [x for x in data["profiles"] if x.id != pid]
     profiles.save(data)
+    _sync_tasks_if_per_profile()
     return jsonify(ok=True)
 
 
@@ -556,6 +629,7 @@ def status():
         current=dict(id=profiles.current().id, name=profiles.current().name or profiles.current().id,
                      issue=profile_issue(profiles.current())),
         tasks=tasks, tasks_error=tasks_error,
+        schedule=schedule_state(tasks) if not tasks_error else None,
         db=db_stats(), last_runs=last_runs(),
         run=dict(running=running, mode=_run["mode"], started=_run["started"]),
         remote=remote_state(),
@@ -737,18 +811,13 @@ def save_remote():
     return jsonify(ok=True, **remote_state())
 
 
-def _task_prefix() -> str:
-    names = [t["name"] for t in list_tasks()]
-    return names[0].rsplit("-", 1)[0] if names and "-" in names[0] else "JobAlerts"
-
-
 @app.post("/api/remote/service")
 def start_service():
     """Create (or update) the always-on dashboard task and start it."""
     if not PYTHONW.exists():
         raise UserError(f"Virtual environment not found: {PYTHONW}")
     script = ROOT / "setup_dashboard_task.ps1"
-    out = powershell(f"& {_ps_str(str(script))} -Prefix {_ps_str(_task_prefix())}", timeout=60)
+    out = powershell(f"& {_ps_str(str(script))} -Prefix {_ps_str(TASK_PREFIX)}", timeout=60)
     return jsonify(ok=True, output=out.strip(), **remote_state())
 
 
@@ -886,25 +955,43 @@ def claude_login():
     return jsonify(ok=True)
 
 
-@app.post("/api/tasks")
-def create_tasks():
-    body = request.get_json(force=True) or {}
-    times = {k: str(body.get(k, d)).strip() for k, d in (("morning", "07:30"), ("catchup_start", "07:40"))}
-    for k, v in times.items():
-        if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", v):
-            raise UserError(f"Time must be HH:MM ({k})")
-    hours = float(body.get("catchup_hours", 2.85))
-    if not 0.25 <= hours <= 23:
-        raise UserError("Catch-up window must be between 0.25 and 23 hours")
-    prefix = str(body.get("prefix") or "JobAlerts").strip()
-    if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", prefix):
-        raise UserError("Task name prefix: letters, digits, - and _ only")
+@app.get("/api/schedule")
+def get_schedule():
+    return jsonify(ok=True, **schedule_state())
+
+
+@app.post("/api/schedule")
+def save_schedule():
+    """The selected profile's message time."""
+    at = str((request.get_json(force=True) or {}).get("time", "")).strip()
+    if not HHMM.fullmatch(at):
+        raise UserError("Time must be HH:MM")
     if not PYTHONW.exists():
         raise UserError(f"Virtual environment not found: {PYTHONW}")
-    script = ROOT / "setup_tasks.ps1"
-    out = powershell(f"& {_ps_str(str(script))} -Prefix {_ps_str(prefix)} -MorningTime {_ps_str(times['morning'])} "
-                     f"-CatchUpStart {_ps_str(times['catchup_start'])} -CatchUpHours {hours}", timeout=120)
-    return jsonify(ok=True, output=out.strip())
+    data = profiles.load()
+    pid = profiles.current().id
+    next(x for x in data["profiles"] if x.id == pid).send_time = at
+    profiles.save(data)
+    ensure_profile_tasks()
+    return jsonify(ok=True, **schedule_state())
+
+
+@app.post("/api/schedule/catchup")
+def save_catchup():
+    """The backup click check, shared by every profile (when the always-on dashboard is not running)."""
+    body = request.get_json(force=True) or {}
+    start = str(body.get("start", "07:40")).strip()
+    if not HHMM.fullmatch(start):
+        raise UserError("Time must be HH:MM")
+    hours = float(body.get("hours", 2.85))
+    if not 0.25 <= hours <= 23:
+        raise UserError("The click check window must be between 0.25 and 23 hours")
+    name = f"{TASK_PREFIX}-CatchUp"
+    for t in list_tasks():
+        if t["kind"] == "catch-up" and t["name"] != name:
+            schedule_task(t["name"], remove=True)
+    schedule_task(name, "-m jobalerts.run --collect-only", start, every_minutes=10, for_hours=hours, limit_minutes=5)
+    return jsonify(ok=True, **schedule_state())
 
 
 @app.post("/api/tasks/remove")
