@@ -90,6 +90,14 @@ class Profile:
 
 # ---------- loading and saving ----------
 
+def _rel(path) -> str:
+    """Path relative to the project folder, or absolute when it is on another drive."""
+    try:
+        return os.path.relpath(path, config.ROOT)
+    except ValueError:
+        return str(path)
+
+
 def _legacy() -> dict:
     """The single profile and bot of a setup without profiles.json, from .env (read now)."""
     from . import preferences
@@ -101,8 +109,8 @@ def _legacy() -> dict:
         municipalities=sorted(config.TARGET_MUNICIPALITIES), counties=sorted(config.TARGET_COUNTIES),
         finn_label=os.getenv("GMAIL_FINN_LABEL", "").strip(), linkedin_label=os.getenv("GMAIL_LINKEDIN_LABEL", "").strip(),
         bot=DEFAULT_BOT_ID,
-        profile_file=os.path.relpath(config.PROFILE_PATH, config.ROOT),
-        preferences_file=os.path.relpath(preferences.PATH, config.ROOT),
+        profile_file=_rel(config.PROFILE_PATH),
+        preferences_file=_rel(preferences.PATH),
     )
     b = Bot(id=DEFAULT_BOT_ID, name="", chat_id=os.getenv("TELEGRAM_CHAT_ID", "").strip(), token_env="TELEGRAM_BOT_TOKEN")
     return {"profiles": [p], "bots": [b]}
