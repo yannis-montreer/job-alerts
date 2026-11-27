@@ -139,3 +139,83 @@ def test_save_settings_validation(client, body, error):
 def test_task_time_validation(client):
     r = client.post("/api/tasks", base_url=BASE, headers=H, json={"morning": "7h30"})
     assert r.status_code == 400 and "HH:MM" in r.get_json()["error"]
+
+
+def _french():
+    import json
+    return json.loads(dashboard.PAGE_FR.read_text(encoding="utf-8"))
+
+
+def test_every_dashboard_text_has_a_french_translation():
+    import re
+    from html.parser import HTMLParser
+    src = dashboard.PAGE.read_text(encoding="utf-8")
+    fr = _french()
+    body = src[src.index("<body>"):src.index("<script>")]
+    found = []
+
+    class P(HTMLParser):
+        skip = 0
+
+        def handle_starttag(self, tag, attrs):
+            a = dict(attrs)
+            if "notr" in (a.get("class") or "").split() or tag in ("code", "pre"):
+                self.skip += 1
+            for k in ("placeholder", "title"):
+                if a.get(k):
+                    found.append(a[k])
+
+        def handle_endtag(self, tag):
+            pass
+
+        def handle_data(self, d):
+            if d.strip():
+                found.append(" ".join(d.split()))
+
+    P().feed(body)
+    names = {"Claude", "Gemini", "Gmail", "LinkedIn", "Finn.no", "finn.no", "NAV / Arbeidsplassen", "Telegram",
+             "@BotFather", "/newbot", "bot", "Google AI Studio", "gemini-flash-latest", "English", "Français",
+             "EN", "🌐", ".", "…", "2", "3", "4", "5"}
+    missing = [s for s in dict.fromkeys(found) if s not in fr and s not in names]
+    script = src[src.index("<script>"):]
+    missing += [s for s in re.findall(r'\btr\("((?:[^"\\]|\\.)*)"', script) + re.findall(r"\btr\('((?:[^'\\]|\\.)*)'", script)
+                if s.replace('\\"', '"') not in fr]
+    missing += [s for s in re.findall(r'\["(?:ads|sorted|relevant|sent|kept|rejected)", "([a-z ]+)"\]', script) if s not in fr]  # stat labels
+    assert not missing, missing
+
+
+def test_french_placeholders_match_english():
+    import re
+    for en, fr in _french().items():
+        assert set(re.findall(r"\{(\w+)\}", en)) == set(re.findall(r"\{(\w+)\}", fr)), en
+
+
+def test_page_inlines_french_and_ui_language(client, env_file):
+    env_file.write_text("DASHBOARD_LANGUAGE=fr\n", encoding="utf-8")
+    r = client.get("/", base_url=BASE).get_data(as_text=True)
+    assert 'let UI = "fr"' in r and '"Overview": "Vue d\'ensemble"' in r and "{{" not in r
+
+
+def test_language_endpoint_confirms_in_telegram(client, env_file, monkeypatch):
+    from jobalerts import config, telegram, texts
+    sent = []
+    monkeypatch.setattr(config, "LANGUAGE", config.LANGUAGE)  # restored after the test
+    monkeypatch.setattr(telegram, "send_text", lambda text: sent.append(text))
+    monkeypatch.setattr(dashboard, "reload_settings", lambda: setattr(config, "LANGUAGE", dotenv_values(env_file)["LANGUAGE"]))
+    r = client.post("/api/language", base_url=BASE, headers=H, json={"alerts": "fr"}).get_json()
+    assert r["telegram_sent"] is True and dotenv_values(env_file)["LANGUAGE"] == "fr"
+    assert sent == [texts.TEXTS["fr"]["language_set"]]
+    r = client.post("/api/language", base_url=BASE, headers=H, json={"dashboard": "fr"}).get_json()
+    assert r["telegram_sent"] is None and dotenv_values(env_file)["DASHBOARD_LANGUAGE"] == "fr" and len(sent) == 1
+    assert client.post("/api/language", base_url=BASE, headers=H, json={"alerts": "de"}).status_code == 400
+
+
+def test_language_saved_even_if_telegram_fails(client, env_file, monkeypatch):
+    from jobalerts import telegram
+
+    def boom(text):
+        raise RuntimeError("no token")
+    monkeypatch.setattr(telegram, "send_text", boom)
+    r = client.post("/api/language", base_url=BASE, headers=H, json={"alerts": "en"}).get_json()
+    assert r["ok"] and r["telegram_sent"] is False and "no token" in r["telegram_error"]
+    assert dotenv_values(env_file)["LANGUAGE"] == "en"

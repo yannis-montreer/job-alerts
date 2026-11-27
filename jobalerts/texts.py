@@ -18,6 +18,7 @@ TEXTS = {
         "run_failed": "❌ {mode} run failed: {err}\nRetrying at the next scheduled run.",
         "mode_full": "Full",
         "mode_collect": "Catch-up",
+        "language_set": "✅ Job alerts are now in English: messages and job summaries from the next run.",
     },
     "fr": {
         "keep": "Garder",
@@ -33,6 +34,7 @@ TEXTS = {
         "run_failed": "❌ Run {mode} échoué : {err}\nRéessai au prochain run planifié.",
         "mode_full": "complet",
         "mode_collect": "rattrapage",
+        "language_set": "✅ Les alertes sont maintenant en français : messages et résumés des offres dès le prochain run.",
     },
 }
 

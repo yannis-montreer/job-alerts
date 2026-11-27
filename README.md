@@ -66,9 +66,12 @@ Double-click **`dashboard.cmd`** in the project folder (or run
 `.venv\Scripts\python.exe -m jobalerts.dashboard`). It opens a local page in your browser
 that walks you through every step below, with a test button for each part:
 
+- **🌐 button (top left):** dashboard language and Telegram language, English or French.
+  Changing the Telegram language asks you to confirm, then sends a confirmation message to
+  Telegram; messages and job summaries switch from the next run.
 - **Preferences:** target roles (main or also OK) and exclusions, with a filter box, plus
   what the bot has learned from your clicks and replies.
-- **Profile & area:** name, language, what reaches Telegram, area (municipality checkboxes)
+- **Profile & area:** name, what reaches Telegram, area (municipality checkboxes)
   and your free-text profile.
 - **Sources:** switch NAV, Finn and LinkedIn on or off; Gmail connection; check buttons.
 - **Output (Telegram):** save the bot token from @BotFather, detect your chat id, test message.
@@ -118,7 +121,8 @@ Keep the token private, and don't run another program with the same bot token: i
 read your clicks before the script does.
 
 ### 5. Fill in `.env` and your profile
-- In `.env`: `CANDIDATE_NAME` (your first name), `LANGUAGE` (`en` or `fr`), and optionally
+- In `.env`: `CANDIDATE_NAME` (your first name), `LANGUAGE` (Telegram messages and summaries,
+  `en` or `fr`), `DASHBOARD_LANGUAGE` (`en` or `fr`), and optionally
   your search area (`TARGET_MUNICIPALITIES`, `TARGET_COUNTIES`; default Oslo, Akershus,
   Drammen, Lier, Moss).
 - Copy `profile.example.md` to `profile.md` and describe yourself: experience, target roles,
@@ -193,7 +197,7 @@ Run the morning task by hand: `Start-ScheduledTask JobAlerts-Morning`.
 | `jobalerts/telegram.py` | Sending ads, reading clicks and replies |
 | `jobalerts/texts.py` | Telegram texts in English and French |
 | `jobalerts/config.py` | Paths, area, settings read from `.env` |
-| `jobalerts/dashboard.py`, `dashboard.html` | Local setup and status dashboard |
+| `jobalerts/dashboard.py`, `dashboard.html`, `dashboard_fr.json` | Local setup and status dashboard, French texts |
 | `dashboard.cmd` | Double-click to open the dashboard |
 | `setup_tasks.ps1` | Creates the scheduled tasks |
 | `tests/` | Unit tests (no network, no secrets) |

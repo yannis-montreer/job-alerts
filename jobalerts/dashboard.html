@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{UI_LANG}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -21,7 +21,7 @@
 body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
 a { color: var(--accent); }
 .layout { display: flex; min-height: 100vh; }
-nav { width: 210px; flex: none; padding: 20px 12px; border-right: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; height: 100vh; }
+nav { width: 210px; flex: none; padding: 20px 12px; z-index: 5; border-right: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; height: 100vh; }
 nav h1 { font-size: 17px; margin: 0 8px 16px; }
 nav a { display: block; padding: 7px 10px; border-radius: 6px; color: var(--text); text-decoration: none; }
 nav a:hover, nav a.active { background: var(--code); }
@@ -73,6 +73,15 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
 .msg.info { display: block; background: var(--code); color: var(--text); }
 #toast { position: fixed; right: 20px; bottom: 20px; padding: 10px 16px; border-radius: 8px; background: var(--text); color: var(--bg); opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 420px; }
 #toast.show { opacity: .95; }
+nav h1 { display: flex; align-items: center; gap: 8px; }
+.langbtn { margin-left: auto; padding: 2px 8px; font-size: 13px; border-radius: 12px; }
+.langmenu { position: absolute; z-index: 10; left: 12px; top: 54px; width: 250px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.18); }
+.langmenu[hidden] { display: none; }
+.langmenu .lm-title { font-weight: 600; margin: 4px 0 2px; }
+.seg { display: flex; gap: 6px; margin: 4px 0 10px; }
+.seg button { flex: 1; padding: 5px 8px; font-size: 13px; }
+.seg button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+#langMsg { font-size: 13px; margin: 0; }
 @media (max-width: 760px) {
   .layout { flex-direction: column; }
   nav { width: auto; height: auto; position: static; border-right: 0; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 4px; padding: 10px 16px; }
@@ -86,7 +95,15 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
 <body>
 <div class="layout">
 <nav id="nav">
-  <h1>Job Alerts</h1>
+  <h1><span>Job Alerts</span><button type="button" class="langbtn" id="langBtn" title="Language" onclick="toggleLangMenu(event)">🌐 <span id="langCode" class="notr">EN</span></button></h1>
+  <div class="langmenu" id="langMenu" hidden>
+    <div class="lm-title">Dashboard</div>
+    <div class="seg notr"><button type="button" data-ui="en" onclick="setUiLang('en')">English</button><button type="button" data-ui="fr" onclick="setUiLang('fr')">Français</button></div>
+    <div class="lm-title">Telegram alerts</div>
+    <div class="hint">messages and job summaries</div>
+    <div class="seg notr"><button type="button" data-alerts="en" onclick="setAlertsLang('en')">English</button><button type="button" data-alerts="fr" onclick="setAlertsLang('fr')">Français</button></div>
+    <p class="hint" id="langMsg"></p>
+  </div>
   <a href="#overview">Overview</a>
   <a href="#prefs">Preferences</a>
   <a href="#search">Profile &amp; area</a>
@@ -152,8 +169,8 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
     <div class="grid2">
       <div><label for="CANDIDATE_NAME">First name <span class="hint">used in the sorting instructions</span></label>
         <input type="text" id="CANDIDATE_NAME"></div>
-      <div><label for="LANGUAGE">Language <span class="hint">summaries and Telegram messages</span></label>
-        <select id="LANGUAGE"><option value="en">English</option><option value="fr">French</option></select></div>
+      <div><label for="langBasics">Telegram language <span class="hint">summaries and Telegram messages</span></label>
+        <button type="button" id="langBasics" onclick="toggleLangMenu(event)">🌐 <span id="langBasicsName"></span></button></div>
     </div>
     <h3 style="margin-top:18px">What reaches Telegram</h3>
     <div class="grid2">
@@ -177,7 +194,7 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
   </div>
   <div class="card">
     <h3>Profile</h3>
-    <p class="hint">Sent as-is to Claude at each run. Describe experience, target roles, sectors, languages and what to reject. Only facts from your CV. <span id="profileFrom"></span></p>
+    <p class="hint">Sent as-is to the AI at each run. Describe experience, target roles, sectors, languages and what to reject. Only facts from your CV. <span id="profileFrom"></span></p>
     <textarea id="profile" spellcheck="true"></textarea>
     <div class="row"><button class="primary" onclick="saveProfile()">Save profile</button></div>
     <div class="msg" id="profileMsg"></div>
@@ -238,7 +255,7 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
   <div class="card" id="geminiCard">
     <h3>Gemini</h3>
     <ol class="steps">
-      <li>Open <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> and sign in with your Google account.</li>
+      <li>Go to <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> and sign in with your Google account.</li>
       <li>Create an API key and paste it below. Keep it private.</li>
     </ol>
     <p class="hint">A Gemini app subscription does not include an API key, but the free tier of the API is enough for one call a day. On the free tier, Google's terms allow it to use what is sent (your profile and the day's ads) to improve its products.</p>
@@ -368,7 +385,7 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
       <button class="primary" id="runFull" onclick="startRun('full')">Full run</button>
       <button id="runCollect" onclick="startRun('collect')">Collect clicks only</button>
     </div>
-    <p class="hint">A full run fetches new ads, sorts them with Claude (1-3 minutes) and sends the relevant ones to Telegram.</p>
+    <p class="hint">A full run fetches new ads, sorts them with the AI (1-3 minutes) and sends the relevant ones to Telegram.</p>
     <div class="msg" id="runMsg"></div>
     <pre class="log" id="runLog">…</pre>
   </div>
@@ -387,7 +404,79 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
 
 <script>
 const TOKEN = "{{TOKEN}}";
+const FR = {{FR}};
+let UI = "{{UI_LANG}}";
 let settings = null, statusData = null, runTimer = null;
+
+// ---------- language ----------
+// Every English text of the page and of this script is a key of FR (dashboard_fr.json).
+function tr(s, vars) {
+  let out = (UI === "fr" && FR[s]) || s;
+  if (vars) out = out.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
+  return out;
+}
+const langName = c => (UI === "fr" ? { en: "anglais", fr: "français" } : { en: "English", fr: "French" })[c] || c;
+function translatePage() {
+  document.documentElement.lang = UI;
+  document.title = tr("Job Alerts");
+  const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n; (n = walk.nextNode());) {
+    if (n.parentElement.closest("script, textarea, pre, .notr")) continue;
+    if (n._en === undefined) { if (!n.nodeValue.trim()) continue; n._en = n.nodeValue; }
+    const key = n._en.replace(/\s+/g, " ").trim();
+    const t = UI === "fr" ? FR[key] : null;
+    n.nodeValue = t ? n._en.match(/^\s*/)[0] + t + n._en.match(/\s*$/)[0] : n._en;
+  }
+  document.querySelectorAll("[placeholder], [title]").forEach(el => {
+    for (const a of ["placeholder", "title"]) {
+      if (!el.hasAttribute(a)) continue;
+      const k = "en" + a;
+      if (!(k in el.dataset)) el.dataset[k] = el.getAttribute(a);
+      el.setAttribute(a, tr(el.dataset[k]));
+    }
+  });
+}
+function langState() {
+  const alerts = (settings && settings.values.LANGUAGE) || "en";
+  $("langCode").textContent = UI.toUpperCase();
+  document.querySelectorAll("[data-ui]").forEach(b => b.classList.toggle("on", b.dataset.ui === UI));
+  document.querySelectorAll("[data-alerts]").forEach(b => b.classList.toggle("on", b.dataset.alerts === alerts));
+  $("langBasicsName").textContent = langName(alerts);
+}
+function toggleLangMenu(e) { e.stopPropagation(); $("langMenu").hidden = !$("langMenu").hidden; }
+document.addEventListener("click", e => { if (!$("langMenu").hidden && !$("langMenu").contains(e.target)) $("langMenu").hidden = true; });
+async function setUiLang(code) {
+  if (code === UI) return;
+  try {
+    await api("/api/language", { dashboard: code });
+    UI = code;
+    await rerender();
+    $("langMsg").textContent = tr("Dashboard in {lang}.", { lang: langName(code) });
+  } catch (e) { $("langMsg").textContent = e.message; }
+}
+async function setAlertsLang(code) {
+  if (code === ((settings && settings.values.LANGUAGE) || "en")) return;
+  if (!confirm(tr("Send the Telegram alerts and job summaries in {lang} from the next run? Ads already sorted keep their summary. A confirmation is sent to Telegram.", { lang: langName(code) }))) return;
+  try {
+    const r = await api("/api/language", { alerts: code });
+    await loadSettings();
+    const text = r.telegram_sent
+      ? tr("Telegram alerts: {lang}. Confirmation sent to Telegram.", { lang: langName(code) })
+      : tr("Telegram alerts: {lang}, saved, but the Telegram confirmation failed: {err}", { lang: langName(code), err: r.telegram_error });
+    $("langMsg").textContent = text; toast(text);
+    if ($("overview").classList.contains("active")) refreshStatus();
+  } catch (e) { $("langMsg").textContent = e.message; }
+}
+async function rerender() {
+  translatePage();
+  await loadSettings().catch(e => toast(e.message));
+  loadProfile().catch(() => {});
+  const id = (location.hash || "#overview").slice(1);
+  if (id === "prefs") renderPrefs();
+  if (id === "history") loadHistory();
+  if (id === "run") pollRun();
+  if (statusData) await refreshStatus();
+}
 
 async function api(path, body) {
   const opt = { headers: { "X-Token": TOKEN } };
@@ -400,7 +489,7 @@ async function api(path, body) {
 }
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-function toast(t) { const el = $("toast"); el.textContent = t; el.classList.add("show"); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove("show"), 2600); }
+function toast(t) { const el = $("toast"); el.textContent = t; el.classList.add("show"); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove("show"), 3200); }
 function msg(id, kind, text) { const el = $(id); el.className = "msg " + kind; el.textContent = text; }
 async function busy(btn, fn) { if (btn) btn.disabled = true; try { return await fn(); } finally { if (btn) btn.disabled = false; } }
 
@@ -419,27 +508,27 @@ window.addEventListener("hashchange", show);
 // ---------- settings ----------
 async function loadSettings() {
   settings = await api("/api/settings");
-  for (const [k, v] of Object.entries(settings.values)) if ($(k) && $(k).type !== "checkbox" && !["LANGUAGE", "AI_PROVIDER"].includes(k)) $(k).value = v;
+  for (const [k, v] of Object.entries(settings.values)) if ($(k) && $(k).type !== "checkbox" && !["AI_PROVIDER"].includes(k)) $(k).value = v;
   const on = (k, dflt) => { const v = (settings.values[k] || "").toLowerCase(); return v ? ["1", "true", "yes", "on"].includes(v) : dflt; };
   $("FINN_FETCH_PAGES").checked = on("FINN_FETCH_PAGES", false);
   $("SOURCE_NAV").checked = on("SOURCE_NAV", true);
   $("SOURCE_FINN").checked = on("SOURCE_FINN", true);
   $("SOURCE_LINKEDIN").checked = on("SOURCE_LINKEDIN", false);
-  $("LANGUAGE").value = settings.values.LANGUAGE || "en";
   $("AI_PROVIDER").value = settings.values.AI_PROVIDER || "claude";
   $("MESSAGE_MIN_SCORE").value = settings.values.MESSAGE_MIN_SCORE || "4";
   $("DIGEST_MIN_SCORE").value = settings.values.DIGEST_MIN_SCORE || "3";
   $("NORWEGIAN_REQUIRED").value = settings.values.NORWEGIAN_REQUIRED || "flag";
   for (const [k, set] of Object.entries(settings.secrets_set)) {
-    const st = $(k + "_state"); if (st) st.textContent = set ? "(saved)" : "(not set)";
+    const st = $(k + "_state"); if (st) st.textContent = set ? tr("(saved)") : tr("(not set)");
     if ($(k)) $(k).value = "";
   }
   const a = settings.area;
   $("areaGroups").innerHTML = Object.entries(a.groups).map(([g, list]) => `
-    <div class="group-title">${esc(g)} <button type="button" onclick="toggleGroup('${esc(g)}', true)">all</button><button type="button" onclick="toggleGroup('${esc(g)}', false)">none</button></div>
-    <div class="muni">${list.map(m => `<label><input type="checkbox" data-group="${esc(g)}" value="${esc(m)}" ${a.selected.includes(m) ? "checked" : ""}> ${esc(title(m))}</label>`).join("")}</div>`).join("");
+    <div class="group-title">${esc(tr(g))} <button type="button" onclick="toggleGroup('${esc(g)}', true)">${tr("all")}</button><button type="button" onclick="toggleGroup('${esc(g)}', false)">${tr("none")}</button></div>
+    <div class="muni notr">${list.map(m => `<label><input type="checkbox" data-group="${esc(g)}" value="${esc(m)}" ${a.selected.includes(m) ? "checked" : ""}> ${esc(title(m))}</label>`).join("")}</div>`).join("");
   $("areaExtra").value = a.extra.map(title).join(", ");
   $("areaCounties").value = a.counties.map(title).join(", ");
+  langState();
 }
 function title(s) { return s.toLowerCase().replace(/(^|[\s-])\S/g, c => c.toUpperCase()); }
 function toggleGroup(g, on) { document.querySelectorAll(`input[data-group="${g}"]`).forEach(c => c.checked = on); }
@@ -449,7 +538,7 @@ async function saveSearch() {
   await busy(btn, async () => {
     try {
       const body = {
-        CANDIDATE_NAME: $("CANDIDATE_NAME").value, LANGUAGE: $("LANGUAGE").value,
+        CANDIDATE_NAME: $("CANDIDATE_NAME").value,
         MESSAGE_MIN_SCORE: $("MESSAGE_MIN_SCORE").value, DIGEST_MIN_SCORE: $("DIGEST_MIN_SCORE").value,
         NORWEGIAN_REQUIRED: $("NORWEGIAN_REQUIRED").value,
         area: {
@@ -460,7 +549,7 @@ async function saveSearch() {
       };
       await api("/api/settings", body);
       await loadSettings();
-      msg("searchMsg", "ok", "Saved. The next run uses these settings.");
+      msg("searchMsg", "ok", tr("Saved. The next run uses these settings."));
     } catch (e) { msg("searchMsg", "bad", e.message); }
   });
 }
@@ -472,7 +561,7 @@ async function saveFields(keys, msgId) {
       await api("/api/settings", body);
       await loadSettings();
       if (keys.includes("AI_PROVIDER")) refreshStatus();
-      msg(msgId, "ok", "Saved.");
+      msg(msgId, "ok", tr("Saved."));
     } catch (e) { msg(msgId, "bad", e.message); }
   });
 }
@@ -480,13 +569,14 @@ async function saveFields(keys, msgId) {
 // ---------- profile ----------
 async function loadProfile() {
   const p = await api("/api/profile");
-  $("profile").value = p.text;
-  $("profileFrom").textContent = p.from_template ? "This is the template: replace the examples, then save." : "";
+  if (!$("profile").value || !profileEdited) $("profile").value = p.text;
+  $("profileFrom").textContent = p.from_template ? tr("This is the template: replace the examples, then save.") : "";
 }
+let profileEdited = false;
 async function saveProfile() {
   const btn = event.target;
   await busy(btn, async () => {
-    try { await api("/api/profile", { text: $("profile").value }); msg("profileMsg", "ok", "Profile saved."); $("profileFrom").textContent = ""; }
+    try { await api("/api/profile", { text: $("profile").value }); profileEdited = false; msg("profileMsg", "ok", tr("Profile saved.")); $("profileFrom").textContent = ""; }
     catch (e) { msg("profileMsg", "bad", e.message); }
   });
 }
@@ -498,21 +588,21 @@ async function detectChat() {
     try {
       const d = await api("/api/telegram/detect", {});
       $("botLink").innerHTML = d.bot ? ` (<a href="https://t.me/${esc(d.bot)}" target="_blank" rel="noopener">@${esc(d.bot)}</a>)` : "";
-      if (!d.chats.length) { $("chats").innerHTML = ""; msg("tgMsg2", "info", `Bot @${d.bot} found, but no message yet. Send it a message in Telegram, then click Detect again.`); return; }
-      $("chats").innerHTML = "<table><tr><th>Name</th><th>Username</th><th>Chat id</th><th></th></tr>" + d.chats.map(c =>
-        `<tr><td>${esc(c.name)}</td><td>${c.username ? "@" + esc(c.username) : ""}</td><td>${esc(c.id)}</td><td><button onclick="useChat('${esc(c.id)}')">Use this chat</button></td></tr>`).join("") + "</table>";
-      msg("tgMsg2", "info", `Bot @${d.bot}: pick your own chat.`);
-    } catch (e) { msg("tgMsg2", "bad", e.message.includes("Unauthorized") ? "Telegram refused the token: save the right token in step 1." : e.message); }
+      if (!d.chats.length) { $("chats").innerHTML = ""; msg("tgMsg2", "info", tr("Bot @{bot} found, but no message yet. Send it a message in Telegram, then click Detect again.", { bot: d.bot })); return; }
+      $("chats").innerHTML = `<table><tr><th>${tr("Name")}</th><th>${tr("Username")}</th><th>${tr("Chat id")}</th><th></th></tr>` + d.chats.map(c =>
+        `<tr><td>${esc(c.name)}</td><td>${c.username ? "@" + esc(c.username) : ""}</td><td>${esc(c.id)}</td><td><button onclick="useChat('${esc(c.id)}')">${tr("Use this chat")}</button></td></tr>`).join("") + "</table>";
+      msg("tgMsg2", "info", tr("Bot @{bot}: pick your own chat.", { bot: d.bot }));
+    } catch (e) { msg("tgMsg2", "bad", e.message.includes("Unauthorized") ? tr("Telegram refused the token: save the right token in step 1.") : e.message); }
   });
 }
 async function useChat(id) {
-  try { await api("/api/settings", { TELEGRAM_CHAT_ID: id }); $("TELEGRAM_CHAT_ID").value = id; msg("tgMsg2", "ok", "Chat id saved. Now send a test message."); }
+  try { await api("/api/settings", { TELEGRAM_CHAT_ID: id }); $("TELEGRAM_CHAT_ID").value = id; msg("tgMsg2", "ok", tr("Chat id saved. Now send a test message.")); }
   catch (e) { msg("tgMsg2", "bad", e.message); }
 }
 async function testTelegram() {
   const btn = event.target;
   await busy(btn, async () => {
-    try { await api("/api/telegram/test", {}); msg("tgMsg3", "ok", "Sent. Check Telegram."); }
+    try { await api("/api/telegram/test", {}); msg("tgMsg3", "ok", tr("Sent. Check Telegram.")); }
     catch (e) { msg("tgMsg3", "bad", e.message); }
   });
 }
@@ -521,11 +611,11 @@ async function testTelegram() {
 async function testGmail() {
   const btn = event.target;
   await busy(btn, async () => {
-    msg("finnMsg", "info", "Connecting to Gmail…");
+    msg("finnMsg", "info", tr("Connecting to Gmail…"));
     try {
       const r = (await api("/api/gmail/test", {})).result;
-      msg("finnMsg", "ok", `Connected (${r.mailbox}). Last ${r.days} days: ${r.emails} Finn alert email(s), ${r.ads} ad(s), ${r.in_area} in your area.` +
-        (r.emails ? "" : " No Finn alert yet: check that the alert is sent to this address."));
+      msg("finnMsg", "ok", tr("Connected ({mailbox}). Last {days} days: {emails} Finn alert email(s), {ads} ad(s), {in_area} in your area.", r) +
+        (r.emails ? "" : " " + tr("No Finn alert yet: check that the alert is sent to this address.")));
     } catch (e) { msg("finnMsg", "bad", e.message); }
   });
 }
@@ -536,20 +626,20 @@ async function saveFinnPages() {
     try {
       await api("/api/settings", { FINN_FETCH_PAGES: $("FINN_FETCH_PAGES").checked ? "true" : "false", FINN_CONTACT_EMAIL: $("FINN_CONTACT_EMAIL").value });
       await loadSettings();
-      msg("finnPagesMsg", "ok", $("FINN_FETCH_PAGES").checked ? "Saved. New Finn ads will be read in full from the next morning run." : "Saved. Finn pages are not downloaded.");
+      msg("finnPagesMsg", "ok", $("FINN_FETCH_PAGES").checked ? tr("Saved. New Finn ads will be read in full from the next morning run.") : tr("Saved. Finn pages are not downloaded."));
     } catch (e) { msg("finnPagesMsg", "bad", e.message); }
   });
 }
 async function purgeFinn() {
-  if (!confirm("Delete every stored Finn ad description and summary? This cannot be undone.")) return;
-  try { const r = await api("/api/finn/purge", {}); msg("finnPagesMsg", "ok", `Deleted for ${r.count} Finn ad(s).`); }
+  if (!confirm(tr("Delete every stored Finn ad description and summary? This cannot be undone."))) return;
+  try { const r = await api("/api/finn/purge", {}); msg("finnPagesMsg", "ok", tr("Deleted for {n} Finn ad(s).", { n: r.count })); }
   catch (e) { msg("finnPagesMsg", "bad", e.message); }
 }
 
 function sourcesLine(s) {
   const on = [s.sources.nav && "NAV", s.sources.finn && "Finn", s.sources.linkedin && "LinkedIn"].filter(Boolean);
   const needsGmail = (s.sources.finn || s.sources.linkedin) && !s.gmail.configured;
-  return (on.length ? esc(on.join(", ")) : "None switched on") + (needsGmail ? " (Gmail not set up: Finn and LinkedIn are skipped)" : "");
+  return (on.length ? esc(on.join(", ")) : tr("None switched on")) + (needsGmail ? " " + tr("(Gmail not set up: Finn and LinkedIn are skipped)") : "");
 }
 
 // ---------- preferences ----------
@@ -562,21 +652,22 @@ async function loadPrefs() {
   renderPrefs();
 }
 function matches(text) { const f = $("prefFilter").value.trim().toLowerCase(); return !f || String(text).toLowerCase().includes(f); }
+const decisionBadge = d => `<span class="badge ${d || "none"}">${d === "keep" ? tr("Kept") : d === "reject" ? tr("Rejected") : tr("None")}</span>`;
 function renderPrefs() {
-  $("rolesTable").innerHTML = prefs.target_roles.map((r, i) => matches(r.name) ? `<tr><td>${esc(r.name)}</td>
-    <td style="width:150px"><select onchange="prefs.target_roles[${i}].level=this.value;markPrefs()"><option value="main" ${r.level === "main" ? "selected" : ""}>Main</option><option value="also" ${r.level === "also" ? "selected" : ""}>Also OK</option></select></td>
-    <td style="width:90px"><button onclick="prefs.target_roles.splice(${i},1);markPrefs()">Remove</button></td></tr>` : "").join("")
-    || `<tr><td class="hint">${prefs.target_roles.length ? "No role matches the filter." : "No role yet: add the jobs you are looking for."}</td></tr>`;
-  $("excludeTable").innerHTML = prefs.exclude.map((x, i) => matches(x) ? `<tr><td>${esc(x)}</td>
-    <td style="width:90px"><button onclick="prefs.exclude.splice(${i},1);markPrefs()">Remove</button></td></tr>` : "").join("")
-    || `<tr><td class="hint">${prefs.exclude.length ? "No exclusion matches the filter." : "Nothing excluded yet."}</td></tr>`;
+  $("rolesTable").innerHTML = prefs.target_roles.map((r, i) => matches(r.name) ? `<tr><td class="notr">${esc(r.name)}</td>
+    <td style="width:150px"><select onchange="prefs.target_roles[${i}].level=this.value;markPrefs()"><option value="main" ${r.level === "main" ? "selected" : ""}>${tr("Main")}</option><option value="also" ${r.level === "also" ? "selected" : ""}>${tr("Also OK")}</option></select></td>
+    <td style="width:110px"><button onclick="prefs.target_roles.splice(${i},1);markPrefs()">${tr("Remove")}</button></td></tr>` : "").join("")
+    || `<tr><td class="hint">${prefs.target_roles.length ? tr("No role matches the filter.") : tr("No role yet: add the jobs you are looking for.")}</td></tr>`;
+  $("excludeTable").innerHTML = prefs.exclude.map((x, i) => matches(x) ? `<tr><td class="notr">${esc(x)}</td>
+    <td style="width:110px"><button onclick="prefs.exclude.splice(${i},1);markPrefs()">${tr("Remove")}</button></td></tr>` : "").join("")
+    || `<tr><td class="hint">${prefs.exclude.length ? tr("No exclusion matches the filter.") : tr("Nothing excluded yet.")}</td></tr>`;
   const fb = feedbackRows.filter(r => matches(`${r.title} ${r.employer} ${r.notes || ""} ${r.decision || ""}`));
-  $("feedback").innerHTML = !feedbackRows.length ? "<p class=\"hint\">No click or reply yet. Click Keep / Reject in Telegram, or reply to an ad with a reason.</p>" :
-    !fb.length ? "<p class=\"hint\">Nothing matches the filter.</p>" :
-    "<table><tr><th>Ad</th><th>Decision</th><th>Comment</th></tr>" + fb.map(r =>
-      `<tr><td><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a><br><span class="hint">${esc(r.employer)}</span></td>` +
-      `<td><span class="badge ${r.decision || "none"}">${r.decision === "keep" ? "Kept" : r.decision === "reject" ? "Rejected" : "None"}</span></td><td>${esc(r.notes || "")}</td></tr>`).join("") + "</table>";
-  $("prefsDirty").textContent = prefsChanged ? "Unsaved changes" : "";
+  $("feedback").innerHTML = !feedbackRows.length ? `<p class="hint">${tr("No click or reply yet. Click Keep / Reject in Telegram, or reply to an ad with a reason.")}</p>` :
+    !fb.length ? `<p class="hint">${tr("Nothing matches the filter.")}</p>` :
+    `<table><tr><th>${tr("Ad")}</th><th>${tr("Decision")}</th><th>${tr("Comment")}</th></tr>` + fb.map(r =>
+      `<tr class="notr"><td><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a><br><span class="hint">${esc(r.employer)}</span></td>` +
+      `<td>${decisionBadge(r.decision)}</td><td>${esc(r.notes || "")}</td></tr>`).join("") + "</table>";
+  $("prefsDirty").textContent = prefsChanged ? tr("Unsaved changes") : "";
 }
 function markPrefs() { prefsChanged = true; renderPrefs(); }
 function addRole() {
@@ -590,7 +681,7 @@ function addExclude() {
 async function savePrefs() {
   const btn = event.target;
   await busy(btn, async () => {
-    try { prefs = (await api("/api/preferences", { preferences: prefs })).preferences; prefsChanged = false; renderPrefs(); msg("prefsMsg", "ok", "Saved. The next run uses these preferences."); }
+    try { prefs = (await api("/api/preferences", { preferences: prefs })).preferences; prefsChanged = false; renderPrefs(); msg("prefsMsg", "ok", tr("Saved. The next run uses these preferences.")); }
     catch (e) { msg("prefsMsg", "bad", e.message); }
   });
 }
@@ -604,19 +695,19 @@ async function saveSources(keys, msgId) {
       keys.forEach(k => body[k] = $(k).type === "checkbox" ? ($(k).checked ? "true" : "false") : $(k).value);
       await api("/api/settings", body);
       await loadSettings();
-      msg(msgId, "ok", "Saved. The next run uses this.");
+      msg(msgId, "ok", tr("Saved. The next run uses this."));
     } catch (e) { msg(msgId, "bad", e.message); }
   });
 }
 async function testLinkedIn() {
   const btn = event.target;
   await busy(btn, async () => {
-    msg("liMsg", "info", "Connecting to Gmail…");
+    msg("liMsg", "info", tr("Connecting to Gmail…"));
     try {
       const r = (await api("/api/linkedin/test", {})).result;
       msg("liMsg", r.emails ? "ok" : "info", r.emails
-        ? `Last ${r.days} days: ${r.emails} LinkedIn alert email(s), ${r.ads} job(s) read, ${r.in_area} in your area.` + (r.ads ? "" : " The jobs could not be read from these emails: tell the developer, the email format may differ.")
-        : `No LinkedIn alert email in the last ${r.days} days (${r.mailbox}). Create the alert on LinkedIn and check that it is sent to this Gmail address.`);
+        ? tr("Last {days} days: {emails} LinkedIn alert email(s), {ads} job(s) read, {in_area} in your area.", r) + (r.ads ? "" : " " + tr("The jobs could not be read from these emails: tell the developer, the email format may differ."))
+        : tr("No LinkedIn alert email in the last {days} days ({mailbox}). Create the alert on LinkedIn and check that it is sent to this Gmail address.", r));
     } catch (e) { msg("liMsg", "bad", e.message); }
   });
 }
@@ -625,56 +716,58 @@ async function testLinkedIn() {
 async function testGemini() {
   const btn = event.target;
   await busy(btn, async () => {
-    try { const r = (await api("/api/gemini/test", {})).result; msg("gemMsg", "ok", `Key accepted. Model: ${r.name} (${r.model}).`); }
+    try { const r = (await api("/api/gemini/test", {})).result; msg("gemMsg", "ok", tr("Key accepted. Model: {name} ({model}).", r)); }
     catch (e) { msg("gemMsg", "bad", e.message); }
   });
 }
 async function claudeLogin() {
-  try { await api("/api/claude/login", {}); toast("A PowerShell window opened: follow it, then click Refresh."); }
+  try { await api("/api/claude/login", {}); toast(tr("A PowerShell window opened: follow it, then click Refresh.")); }
   catch (e) { toast(e.message); }
 }
 
 // ---------- status ----------
 function li(state, what, text, link) {
-  return `<li><span class="dot ${state}"></span><span class="what">${esc(what)}</span><span>${text}</span>${link ? `<a class="go" href="#${link}">Open</a>` : ""}</li>`;
+  return `<li><span class="dot ${state}"></span><span class="what">${esc(what)}</span><span>${text}</span>${link ? `<a class="go" href="#${link}">${tr("Open")}</a>` : ""}</li>`;
 }
 async function refreshStatus() {
-  try { statusData = await api("/api/status"); } catch (e) { $("checks").innerHTML = li("bad", "Dashboard", esc(e.message)); return; }
+  try { statusData = await api("/api/status"); } catch (e) { $("checks").innerHTML = li("bad", tr("Dashboard"), esc(e.message)); return; }
   const s = statusData, c = s.claude;
-  const claudeLine = !c.installed ? ["bad", "Not installed"] : !c.logged_in ? ["bad", "Installed, not logged in"] :
-    (c.days_left != null && c.days_left < 5) ? ["warn", `Logged in, expires in ${c.days_left} day(s)`] :
-    ["ok", "Logged in" + (c.days_left != null ? `, expires in ${c.days_left} days` : "")];
-  const tg = s.telegram.token && s.telegram.chat_id ? ["ok", "Token and chat id saved (use Test to check)"] :
-    s.telegram.token ? ["warn", "Token saved, chat id missing"] : ["bad", "Not set up"];
-  const prof = !s.profile.exists ? ["bad", "Missing"] : s.profile.is_template ? ["warn", "Still the template"] : ["ok", "Filled in"];
+  const claudeLine = !c.installed ? ["bad", tr("Not installed")] : !c.logged_in ? ["bad", tr("Installed, not logged in")] :
+    (c.days_left != null && c.days_left < 5) ? ["warn", tr("Logged in, expires in {n} day(s)", { n: c.days_left })] :
+    ["ok", c.days_left != null ? tr("Logged in, expires in {n} days", { n: c.days_left }) : tr("Logged in")];
+  const tg = s.telegram.token && s.telegram.chat_id ? ["ok", tr("Token and chat id saved (use Test to check)")] :
+    s.telegram.token ? ["warn", tr("Token saved, chat id missing")] : ["bad", tr("Not set up")];
+  const prof = !s.profile.exists ? ["bad", tr("Missing")] : s.profile.is_template ? ["warn", tr("Still the template")] : ["ok", tr("Filled in")];
   const full = s.tasks.filter(t => t.kind === "full run"), coll = s.tasks.filter(t => t.kind === "catch-up");
-  const sched = s.tasks_error ? ["warn", "Could not read tasks: " + esc(s.tasks_error)] :
-    full.length ? ["ok", `Morning run at ${esc(full[0].start)}, next ${esc(full[0].next)}` + (coll.length ? "; click collection on" : "; no click collection")] :
-    ["bad", "No scheduled run"];
+  const sched = s.tasks_error ? ["warn", tr("Could not read tasks: {err}", { err: esc(s.tasks_error) })] :
+    full.length ? ["ok", tr("Morning run at {start}, next {next}", { start: esc(full[0].start), next: esc(full[0].next) }) + (coll.length ? tr("; click collection on") : tr("; no click collection"))] :
+    ["bad", tr("No scheduled run")];
+  const alerts = (settings && settings.values.LANGUAGE) || "en";
   $("checks").innerHTML =
-    li(s.name ? "ok" : "warn", "Name", s.name ? "Set" : "Not set", "search") +
-    li(prof[0], "Profile", prof[1], "search") +
+    li(s.name ? "ok" : "warn", tr("Name"), s.name ? tr("Set") : tr("Not set"), "search") +
+    li(prof[0], tr("Profile"), prof[1], "search") +
     li(tg[0], "Telegram", tg[1], "telegram") +
     (s.ai.provider === "gemini"
-      ? li(s.ai.gemini_key ? "ok" : "bad", "AI: Gemini", s.ai.gemini_key ? `API key saved, model ${esc(s.ai.gemini_model)} (use Test key to check)` : "API key missing", "ai")
-      : li(claudeLine[0], "AI: Claude", claudeLine[1], "ai")) +
-    li(s.sources.nav || s.sources.finn || s.sources.linkedin ? "ok" : "bad", "Sources", sourcesLine(s), "sources") +
-    li(sched[0], "Schedule", sched[1], "schedule");
+      ? li(s.ai.gemini_key ? "ok" : "bad", tr("AI: Gemini"), s.ai.gemini_key ? tr("API key saved, model {model} (use Test key to check)", { model: esc(s.ai.gemini_model) }) : tr("API key missing"), "ai")
+      : li(claudeLine[0], tr("AI: Claude"), claudeLine[1], "ai")) +
+    li(s.sources.nav || s.sources.finn || s.sources.linkedin ? "ok" : "bad", tr("Sources"), sourcesLine(s), "sources") +
+    li(sched[0], tr("Schedule"), sched[1], "schedule") +
+    li("ok", tr("Language"), esc(tr("Telegram alerts in {tg}, dashboard in {ui} (🌐 button at the top left)", { tg: langName(alerts), ui: langName(UI) })));
   const d = s.db || {};
   const statsHtml = [["ads", "ads seen"], ["sorted", "sorted"], ["relevant", "relevant"], ["sent", "sent"], ["kept", "kept"], ["rejected", "rejected"]]
-    .map(([k, l]) => `<div class="stat"><b>${d[k] ?? 0}</b><span>${l}</span></div>`).join("");
+    .map(([k, l]) => `<div class="stat"><b>${d[k] ?? 0}</b><span>${tr(l)}</span></div>`).join("");
   $("stats").innerHTML = statsHtml; $("stats2").innerHTML = statsHtml;
-  $("lastRuns").textContent = s.last_runs.length ? s.last_runs.join("\n") : "No run yet.";
-  $("claudeState").innerHTML = li(claudeLine[0], "Status", esc(claudeLine[1])) +
-    (c.plan ? li("off", "Plan", esc(c.plan)) : "") + li("off", "Program", `<code>${esc(c.path)}</code>`);
-  $("claudeBtn").textContent = !c.installed ? "Install and log in" : c.logged_in ? "Log in again" : "Log in";
+  $("lastRuns").textContent = s.last_runs.length ? s.last_runs.join("\n") : tr("No run yet.");
+  $("claudeState").innerHTML = li(claudeLine[0], tr("Status"), esc(claudeLine[1])) +
+    (c.plan ? li("off", tr("Plan"), esc(c.plan)) : "") + li("off", tr("Program"), `<code>${esc(c.path)}</code>`);
+  $("claudeBtn").textContent = !c.installed ? tr("Install and log in") : c.logged_in ? tr("Log in again") : tr("Log in");
   // Show the chosen AI first; the other card stays available below.
   const ai = $("ai"), first = s.ai.provider === "gemini" ? $("geminiCard") : $("claudeCard");
   ai.insertBefore(first, ai.querySelector(".card").nextSibling);
-  $("tasks").innerHTML = s.tasks_error ? `<p class="hint">${esc(s.tasks_error)}</p>` : !s.tasks.length ? "<p>No task yet. Create them below.</p>" :
-    "<table><tr><th>Task</th><th>Type</th><th>Starts</th><th>Repeats</th><th>Next run</th><th>Last run</th><th></th></tr>" +
-    s.tasks.map(t => `<tr><td>${esc(t.name)}</td><td>${esc(t.kind)}</td><td>${esc(t.start)}</td><td>${esc(t.every.replace("PT", "").toLowerCase())}</td><td>${esc(t.next)}</td><td>${esc(t.last)}${t.last ? (t.result === 0 ? " ✓" : ` (code ${esc(t.result)})`) : ""}</td>` +
-      `<td><button onclick="removeTask('${esc(t.name)}')">Remove</button></td></tr>`).join("") + "</table>";
+  $("tasks").innerHTML = s.tasks_error ? `<p class="hint">${esc(s.tasks_error)}</p>` : !s.tasks.length ? `<p>${tr("No task yet. Create them below.")}</p>` :
+    `<table><tr><th>${tr("Task")}</th><th>${tr("Type")}</th><th>${tr("Starts")}</th><th>${tr("Repeats")}</th><th>${tr("Next run")}</th><th>${tr("Last run")}</th><th></th></tr>` +
+    s.tasks.map(t => `<tr><td>${esc(t.name)}</td><td>${esc(tr(t.kind))}</td><td>${esc(t.start)}</td><td>${esc(t.every.replace("PT", "").toLowerCase())}</td><td>${esc(t.next)}</td><td>${esc(t.last)}${t.last ? (t.result === 0 ? " ✓" : " " + tr("(code {code})", { code: esc(t.result) })) : ""}</td>` +
+      `<td><button onclick="removeTask('${esc(t.name)}')">${tr("Remove")}</button></td></tr>`).join("") + "</table>";
   if (full.length) $("tMorning").value = full[0].start;
   if (coll.length) $("tCatch").value = coll[0].start;
 }
@@ -685,36 +778,36 @@ async function createTasks() {
   await busy(btn, async () => {
     try {
       await api("/api/tasks", { morning: $("tMorning").value, catchup_start: $("tCatch").value, catchup_hours: parseFloat($("tHours").value), prefix: $("tPrefix").value });
-      msg("taskMsg", "ok", "Tasks created or updated.");
+      msg("taskMsg", "ok", tr("Tasks created or updated."));
       await refreshStatus();
       const names = statusData.tasks.map(t => t.name), p = $("tPrefix").value;
       const others = names.filter(n => !n.startsWith(p + "-"));
-      if (others.length) msg("taskMsg", "info", `Done. Other tasks also run this tool: ${others.join(", ")}. Remove them if they are duplicates.`);
+      if (others.length) msg("taskMsg", "info", tr("Done. Other tasks also run this tool: {names}. Remove them if they are duplicates.", { names: others.join(", ") }));
     } catch (e) { msg("taskMsg", "bad", e.message); }
   });
 }
 async function removeTask(name) {
-  if (!confirm(`Remove the scheduled task "${name}"?`)) return;
-  try { await api("/api/tasks/remove", { name }); toast("Task removed."); refreshStatus(); }
+  if (!confirm(tr('Remove the scheduled task "{name}"?', { name }))) return;
+  try { await api("/api/tasks/remove", { name }); toast(tr("Task removed.")); refreshStatus(); }
   catch (e) { toast(e.message); }
 }
 
 // ---------- run ----------
 async function startRun(mode) {
-  if (mode === "full" && !confirm("Start a full run now? Relevant new ads will be sent to Telegram.")) return;
-  try { await api("/api/run", { mode }); msg("runMsg", "info", "Started…"); pollRun(); }
+  if (mode === "full" && !confirm(tr("Start a full run now? Relevant new ads will be sent to Telegram."))) return;
+  try { await api("/api/run", { mode }); msg("runMsg", "info", tr("Started…")); pollRun(); }
   catch (e) { msg("runMsg", "bad", e.message); }
 }
 async function pollRun() {
   clearTimeout(runTimer);
   try {
     const r = await api("/api/run");
-    $("runLog").textContent = r.log.join("\n") || "No log yet.";
+    $("runLog").textContent = r.log.join("\n") || tr("No log yet.");
     $("runLog").scrollTop = $("runLog").scrollHeight;
     $("runFull").disabled = $("runCollect").disabled = r.running;
-    if (r.running) { msg("runMsg", "info", `${r.mode === "collect" ? "Click collection" : "Full run"} in progress since ${r.started}…`); runTimer = setTimeout(pollRun, 2000); }
-    else if (r.exit_code === 0) msg("runMsg", "ok", "Run finished successfully.");
-    else if (r.exit_code != null) msg("runMsg", "bad", `Run failed (code ${r.exit_code}). See the log below.`);
+    if (r.running) { msg("runMsg", "info", tr("{mode} in progress since {started}…", { mode: r.mode === "collect" ? tr("Click collection") : tr("Full run"), started: r.started })); runTimer = setTimeout(pollRun, 2000); }
+    else if (r.exit_code === 0) msg("runMsg", "ok", tr("Run finished successfully."));
+    else if (r.exit_code != null) msg("runMsg", "bad", tr("Run failed (code {code}). See the log below.", { code: r.exit_code }));
   } catch (e) { msg("runMsg", "bad", e.message); }
 }
 
@@ -722,15 +815,17 @@ async function pollRun() {
 async function loadHistory() {
   try {
     const rows = (await api("/api/history")).rows;
-    $("historyTable").innerHTML = !rows.length ? "<p>No ad sent yet.</p>" :
-      "<table><tr><th>Ad</th><th>Place</th><th>Score</th><th>Sent</th><th>Decision</th><th>Comments</th></tr>" + rows.map(r =>
-        `<tr><td><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a><br><span class="hint">${esc(r.employer)} · ${esc(r.source)}${r.norwegian_required ? " · Norwegian required" : ""}</span></td>` +
+    $("historyTable").innerHTML = !rows.length ? `<p>${tr("No ad sent yet.")}</p>` :
+      `<table><tr><th>${tr("Ad")}</th><th>${tr("Place")}</th><th>${tr("Score")}</th><th>${tr("Sent")}</th><th>${tr("Decision")}</th><th>${tr("Comments")}</th></tr>` + rows.map(r =>
+        `<tr class="notr"><td><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a><br><span class="hint">${esc(r.employer)} · ${esc(r.source)}${r.norwegian_required ? " · " + tr("Norwegian required") : ""}</span></td>` +
         `<td>${esc(title(r.municipal || ""))}</td><td>${esc(r.score)}/5</td><td>${esc((r.sent_at || "").slice(0, 10))}</td>` +
-        `<td><span class="badge ${r.decision || "none"}">${r.decision === "keep" ? "Kept" : r.decision === "reject" ? "Rejected" : "None"}</span></td><td>${esc(r.notes || "")}</td></tr>`).join("") + "</table>";
+        `<td>${decisionBadge(r.decision)}</td><td>${esc(r.notes || "")}</td></tr>`).join("") + "</table>";
     if (!statusData) refreshStatus();
   } catch (e) { $("historyTable").textContent = e.message; }
 }
 
+$("profile").addEventListener("input", () => { profileEdited = true; });
+translatePage();
 loadSettings().catch(e => toast(e.message));
 loadProfile().catch(e => toast(e.message));
 show();

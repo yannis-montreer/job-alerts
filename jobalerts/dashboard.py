@@ -27,13 +27,14 @@ from pathlib import Path
 from dotenv import dotenv_values, load_dotenv
 from flask import Flask, abort, jsonify, request
 
-from . import config, finn, linkedin, preferences, telegram, triage
+from . import config, finn, linkedin, preferences, telegram, texts, triage
 
 ROOT = config.ROOT
 ENV_PATH = ROOT / ".env"
 ENV_EXAMPLE = ROOT / ".env.example"
 PROFILE_EXAMPLE = ROOT / "profile.example.md"
 PAGE = Path(__file__).with_name("dashboard.html")
+PAGE_FR = Path(__file__).with_name("dashboard_fr.json")
 LOG_FILE = config.LOG_DIR / "jobalerts.log"
 PYTHONW = ROOT / ".venv" / "Scripts" / "pythonw.exe"
 PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
@@ -44,7 +45,7 @@ PLAIN_KEYS = {"CANDIDATE_NAME", "LANGUAGE", "TELEGRAM_CHAT_ID", "GMAIL_ADDRESS",
               "TARGET_MUNICIPALITIES", "TARGET_COUNTIES", "AI_PROVIDER", "GEMINI_MODEL",
               "FINN_FETCH_PAGES", "FINN_CONTACT_EMAIL",
               "NORWEGIAN_REQUIRED", "MESSAGE_MIN_SCORE", "DIGEST_MIN_SCORE",
-              "SOURCE_NAV", "SOURCE_FINN", "SOURCE_LINKEDIN", "GMAIL_LINKEDIN_LABEL"}
+              "SOURCE_NAV", "SOURCE_FINN", "SOURCE_LINKEDIN", "GMAIL_LINKEDIN_LABEL", "DASHBOARD_LANGUAGE"}
 BOOL_KEYS = {"FINN_FETCH_PAGES", "SOURCE_NAV", "SOURCE_FINN", "SOURCE_LINKEDIN"}
 AREA_GROUPS = {
     "Oslo": ["OSLO"],
@@ -243,7 +244,10 @@ def profile_state() -> dict:
 @app.get("/")
 def page():
     html = PAGE.read_text(encoding="utf-8")
-    return html.replace("{{TOKEN}}", TOKEN), 200, {"Content-Type": "text/html; charset=utf-8"}
+    ui = env_values().get("DASHBOARD_LANGUAGE", "").strip().lower()
+    fr = json.dumps(json.loads(PAGE_FR.read_text(encoding="utf-8")), ensure_ascii=False).replace("</", "<\\/")
+    html = html.replace("{{TOKEN}}", TOKEN).replace("{{UI_LANG}}", ui if ui in ("en", "fr") else "en").replace("{{FR}}", fr)
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 
 @app.get("/api/settings")
@@ -269,8 +273,9 @@ def save_settings():
     for k in PLAIN_KEYS - {"TARGET_MUNICIPALITIES", "TARGET_COUNTIES"}:
         if k in body:
             updates[k] = str(body[k]).strip()
-    if "LANGUAGE" in updates and updates["LANGUAGE"] not in ("en", "fr"):
-        raise UserError("Language must be en or fr")
+    for k in ("LANGUAGE", "DASHBOARD_LANGUAGE"):
+        if k in updates and updates[k] not in ("en", "fr"):
+            raise UserError("Language must be en or fr")
     if "AI_PROVIDER" in updates and updates["AI_PROVIDER"] not in ("claude", "gemini"):
         raise UserError("AI must be claude or gemini")
     if updates.get("GEMINI_MODEL") and not re.fullmatch(r"[a-z0-9][a-z0-9.\-]{1,60}", updates["GEMINI_MODEL"]):
@@ -358,6 +363,30 @@ def telegram_test():
     reload_settings()
     telegram.send_text("✅ Job alerts: test message from the dashboard. Telegram works.")
     return jsonify(ok=True)
+
+
+@app.post("/api/language")
+def set_language():
+    """Dashboard and/or Telegram language. A new Telegram language is confirmed in Telegram."""
+    body = request.get_json(force=True) or {}
+    updates = {}
+    for key, field in (("LANGUAGE", "alerts"), ("DASHBOARD_LANGUAGE", "dashboard")):
+        if field in body:
+            value = str(body[field]).strip().lower()
+            if value not in ("en", "fr"):
+                raise UserError("Language must be en or fr")
+            updates[key] = value
+    if not updates:
+        raise UserError("Nothing to change")
+    write_env(updates)
+    sent, error = None, None
+    if "LANGUAGE" in updates:
+        try:
+            telegram.send_text(texts.t("language_set"))
+            sent = True
+        except Exception as e:  # the language is saved anyway
+            sent, error = False, telegram_safe(str(e))
+    return jsonify(ok=True, telegram_sent=sent, telegram_error=error)
 
 
 @app.post("/api/gmail/test")
