@@ -88,8 +88,13 @@ def service_port() -> int:
     return int(raw) if raw.isdigit() else SERVICE_PORT
 
 
+def _setting(key: str) -> str:
+    """Read from .env each time: another dashboard window may have changed it."""
+    return (env_values().get(key) or os.getenv(key, "")).strip()
+
+
 def remote_host() -> str:
-    return os.getenv("DASHBOARD_REMOTE_HOST", "").strip().lower()
+    return _setting("DASHBOARD_REMOTE_HOST").lower()
 
 
 def is_local() -> bool:
@@ -102,7 +107,7 @@ def is_remote() -> bool:
 
 
 def password_hash() -> str:
-    raw = os.getenv("DASHBOARD_PASSWORD_HASH", "").strip()
+    raw = _setting("DASHBOARD_PASSWORD_HASH")
     try:
         return base64.urlsafe_b64decode(raw.encode()).decode() if raw else ""
     except ValueError:
