@@ -1,5 +1,5 @@
 """User-facing texts (Telegram messages), in the language set by LANGUAGE in .env."""
-from . import config
+from . import profiles
 
 LANGUAGE_NAMES = {"en": "English", "fr": "French"}
 
@@ -62,7 +62,8 @@ TEXTS = {
 
 
 def lang() -> str:
-    return config.LANGUAGE if config.LANGUAGE in TEXTS else "en"
+    language = profiles.current().language
+    return language if language in TEXTS else "en"
 
 
 def t(key: str, **kw) -> str:

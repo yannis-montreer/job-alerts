@@ -15,6 +15,26 @@ own profile with Claude or Gemini, and sends the relevant ones to you on Telegra
 - **Delivery:** a Telegram bot. No server or permanent process: the script runs from the
   Windows Task Scheduler.
 
+## Several profiles
+
+One installation can serve several people (or several searches), each with its own **profile**:
+profile text, preferences, area, Telegram settings, Gmail labels for the Finn and LinkedIn alerts,
+and its own **Telegram bot** (two profiles may share a bot). Pick the profile at the top of the
+dashboard's menu; **+ New profile** adds one, and the Output page creates its bot (**+ New bot**,
+then token and chat as in step 4).
+
+- Sources are fetched once a day for everyone; each ad goes to the profiles whose area it is in
+  (and, for Finn and LinkedIn, whose Gmail label it came from). An ad that suits two profiles is
+  sent to both.
+- Each profile is sorted with its own AI call, so the AI usage grows with the number of profiles.
+- Clicks, replies and application kits belong to the profile whose message they answer: one
+  person's choices never teach another person's sorting.
+- A profile that is not set up yet (no bot, no profile text) is skipped until it is.
+
+Profiles are stored in `profiles.json` and `profiles/<id>/` (git-ignored); bot tokens in `.env`
+(`TELEGRAM_BOT_TOKEN` for the first bot, `BOT_B2_TOKEN`... for the others). A setup from before
+profiles becomes profile `p1` with bot `b1` the first time a profile setting is saved.
+
 ## How a run works
 
 `python -m jobalerts.run` (every morning, 07:30 by default):
@@ -227,6 +247,7 @@ Run the morning task by hand: `Start-ScheduledTask JobAlerts-Morning`.
 | `jobalerts/linkedin.py` | LinkedIn alert emails |
 | `jobalerts/mail.py` | Shared Gmail reading (read-only) and area filter for these emails |
 | `jobalerts/preferences.py` | Target roles and exclusions (`preferences.json`, git-ignored) |
+| `jobalerts/profiles.py` | Profiles and bots (`profiles.json`, git-ignored) |
 | `jobalerts/triage.py` | Sorting with Claude or Gemini (test alone: `python -m jobalerts.triage`) |
 | `jobalerts/telegram.py` | Sending ads, reading clicks and replies |
 | `jobalerts/texts.py` | Telegram texts in English and French |

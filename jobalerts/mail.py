@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from email import message_from_bytes
 
-from . import config, db
+from . import db, profiles
 
 IMAP_HOST = "imap.gmail.com"
 DEFAULT_LOOKBACK_DAYS = 3
@@ -18,14 +18,10 @@ def credentials():
     return (addr, pwd) if addr and pwd else None
 
 
-def mailbox(label_env: str) -> str:
-    return os.getenv(label_env, "").strip() or "INBOX"
-
-
-def since_for(con, meta_key: str) -> str:
+def since_for(con, meta_key: str, fallback_key: str | None = None) -> str:
     """IMAP date to search from: a few days back, or back to the last success after missed runs."""
     days = DEFAULT_LOOKBACK_DAYS
-    last = db.get_meta(con, meta_key)
+    last = db.get_meta(con, meta_key) or (db.get_meta(con, fallback_key) if fallback_key else None)
     if last:
         days = (datetime.now(timezone.utc) - datetime.fromisoformat(last)).days + 2
     return (datetime.now(timezone.utc) - timedelta(days=min(days, MAX_LOOKBACK_DAYS))).strftime("%d-%b-%Y")
@@ -69,6 +65,14 @@ def alert_texts(sender: str, box: str, since: str) -> list[str]:
             pass
 
 
+def by_mailbox(profile_list, attr: str) -> dict:
+    """{mailbox: [profiles reading it]} for the given mailbox attribute (finn_mailbox...)."""
+    out = {}
+    for p in profile_list:
+        out.setdefault(getattr(p, attr), []).append(p)
+    return out
+
+
 # ---------- area filter for free-text locations ----------
 
 def _place_matches(part: str, name: str) -> bool:
@@ -82,11 +86,12 @@ def _place_matches(part: str, name: str) -> bool:
     return not part[len(name) + 1:].startswith("I ")
 
 
-def in_target(location: str) -> bool:
+def in_target(location: str, profile=None) -> bool:
     """Unknown location: keep it (the user decides). Otherwise one of its parts must be a
-    target municipality or county."""
+    target municipality or county of the profile (default: the current one)."""
     if not location:
         return True
-    names = config.TARGET_MUNICIPALITIES | config.TARGET_COUNTIES
+    p = profile or profiles.current()
+    names = p.target_municipalities | p.target_counties
     parts = [p.strip() for p in re.split(r"[,/;]| OG ", location.upper()) if p.strip()]
     return any(_place_matches(p, n) for p in parts for n in names)

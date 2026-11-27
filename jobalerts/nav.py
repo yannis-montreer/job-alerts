@@ -16,7 +16,7 @@ from email.utils import format_datetime
 
 import requests
 
-from . import config, db
+from . import config, db, profiles
 
 log = logging.getLogger(__name__)
 TIMEOUT = 30
@@ -52,17 +52,17 @@ def html_to_text(s: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", re.sub(r"[ \t]+", " ", s)).strip()
 
 
-def is_target_location(entry: dict) -> bool:
+def is_target_location(entry: dict, municipalities: set) -> bool:
     muni = (entry.get("municipal") or "").strip().upper()
     # "?" or empty: unknown municipality, decided from the detail (county).
-    return muni in config.TARGET_MUNICIPALITIES or muni in ("", "?")
+    return muni in municipalities or muni in ("", "?")
 
 
-def detail_in_target(ad: dict) -> bool:
+def detail_in_target(ad: dict, municipalities: set, counties: set) -> bool:
     for loc in ad.get("workLocations") or []:
-        if (loc.get("municipal") or "").upper() in config.TARGET_MUNICIPALITIES:
+        if (loc.get("municipal") or "").upper() in municipalities:
             return True
-        if (loc.get("county") or "").upper() in config.TARGET_COUNTIES:
+        if (loc.get("county") or "").upper() in counties:
             return True
     return False
 
@@ -109,8 +109,12 @@ class Feed:
         return ad
 
 
-def fetch_new_ads(con, since: datetime):
-    """Return active, in-area, never-seen ads with their description."""
+def fetch_new_ads(con, since: datetime, profile_list=None):
+    """Return active, never-seen ads in the area of at least one profile, with their description.
+    Each one is handed to the profiles whose area it is in (matches table)."""
+    profile_list = profile_list or profiles.all_profiles()
+    all_munis = set().union(*(p.target_municipalities for p in profile_list))
+    all_counties = set().union(*(p.target_counties for p in profile_list))
     feed = Feed()
     stats = dict(items=0, old=0, inactive=0, out_of_area=0, seen=0, new=0)
     new_ads = []
@@ -124,7 +128,7 @@ def fetch_new_ads(con, since: datetime):
         if entry.get("status") != "ACTIVE":
             stats["inactive"] += 1
             continue
-        if not is_target_location(entry):
+        if not is_target_location(entry, all_munis):
             stats["out_of_area"] += 1
             continue
         uuid = entry.get("uuid") or item["id"]
@@ -135,7 +139,8 @@ def fetch_new_ads(con, since: datetime):
         if ad is None:  # not stored: retried at the next run
             stats["detail_unavailable"] = stats.get("detail_unavailable", 0) + 1
             continue
-        if not detail_in_target(ad):
+        wanted = [p for p in profile_list if detail_in_target(ad, p.target_municipalities, p.target_counties)]
+        if not wanted:
             stats["out_of_area"] += 1
             continue
         record = dict(
@@ -153,6 +158,8 @@ def fetch_new_ads(con, since: datetime):
         if db.insert_ad(con, record):
             stats["new"] += 1
             new_ads.append(record)
+            for p in wanted:
+                db.add_match(con, p.id, uuid)
     log.info("NAV: %s", stats)
     return new_ads, stats
 

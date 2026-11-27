@@ -121,11 +121,12 @@ def test_html_to_text():
 
 
 def test_nav_location_filters():
-    assert nav.is_target_location({"municipal": "OSLO"})
-    assert nav.is_target_location({"municipal": "?"})  # unknown: decided from the detail
-    assert not nav.is_target_location({"municipal": "BERGEN"})
-    assert nav.detail_in_target({"workLocations": [{"municipal": "Bergen", "county": "Akershus"}]})
-    assert not nav.detail_in_target({"workLocations": [{"municipal": "Bergen", "county": "Vestland"}]})
+    munis, counties = {"OSLO", "ASKER"}, {"OSLO", "AKERSHUS"}
+    assert nav.is_target_location({"municipal": "OSLO"}, munis)
+    assert nav.is_target_location({"municipal": "?"}, munis)  # unknown: decided from the detail
+    assert not nav.is_target_location({"municipal": "BERGEN"}, munis)
+    assert nav.detail_in_target({"workLocations": [{"municipal": "Bergen", "county": "Akershus"}]}, munis, counties)
+    assert not nav.detail_in_target({"workLocations": [{"municipal": "Bergen", "county": "Vestland"}]}, munis, counties)
 
 
 def test_compute_since_window(con):

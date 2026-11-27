@@ -36,13 +36,15 @@ TEST_ENV = {
 }
 os.environ.update(TEST_ENV)
 
-from jobalerts import config, db, preferences  # noqa: E402
+from jobalerts import config, db, preferences, profiles  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
 def isolated_preferences(tmp_path, monkeypatch):
     """Never read or write the real preferences.json."""
     monkeypatch.setattr(preferences, "PATH", tmp_path / "preferences.json")
+    monkeypatch.setattr(profiles, "PATH", tmp_path / "profiles.json")  # no profiles.json: one profile from .env
+    monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")  # never the real profile files
 
 
 @pytest.fixture
@@ -56,10 +58,20 @@ def con(tmp_path, monkeypatch):
     c.close()
 
 
-def add_ad(con, uuid="nav-1", **kw):
+def add_ad(con, uuid="nav-1", profile="p1", **kw):
+    """An ad, handed to `profile` (None: to no profile). Sorting fields (relevant, score, summary,
+    norwegian_required, triaged_at, sent_at) go to that profile's match."""
+    match_keys = ("relevant", "score", "summary", "norwegian_required", "triaged_at", "sent_at")
+    match = {k: kw.pop(k) for k in match_keys if k in kw}
     ad = dict(uuid=uuid, date_modified=None, title="Account Executive", employer="Acme AS",
               municipal="OSLO", url="https://example.org/ad", application_url=None,
               description="Sell B2B software.", source="nav")
     ad.update(kw)
     db.insert_ad(con, ad)
+    if profile:
+        db.add_match(con, profile, uuid)
+        if match:
+            sets = ", ".join(f"{k}=?" for k in match)
+            con.execute(f"UPDATE matches SET {sets} WHERE profile_id=? AND uuid=?", (*match.values(), profile, uuid))
+            con.commit()
     return ad

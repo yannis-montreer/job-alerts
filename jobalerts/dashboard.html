@@ -87,10 +87,15 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
 .seg button { flex: 1; padding: 5px 8px; font-size: 13px; }
 .seg button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 #langMsg { font-size: 13px; margin: 0; }
+.profilepick { margin: 0 8px 14px; }
+.profilepick label { margin: 0 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+.profilepick select { padding: 6px 8px; font-weight: 600; }
+.ptag { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 10px; background: var(--code); color: var(--muted); margin-left: 6px; vertical-align: middle; }
 @media (max-width: 760px) {
   .layout { flex-direction: column; }
   nav { width: auto; height: auto; position: static; border-right: 0; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 4px; padding: 10px 16px; }
   nav h1 { width: 100%; margin: 0 0 6px; }
+  .profilepick { width: 100%; margin: 0 0 6px; }
   main { padding: 16px; }
   .grid2 { grid-template-columns: 1fr; }
   table { display: block; overflow-x: auto; }
@@ -113,6 +118,10 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
 <div class="layout">
 <nav id="nav">
   <h1><span>Job Alerts</span><button type="button" class="langbtn" id="langBtn" title="Language" onclick="toggleLangMenu(event)">🌐 <span id="langCode" class="notr">EN</span></button></h1>
+  <div class="profilepick">
+    <label for="profileSel">Profile</label>
+    <select id="profileSel" onchange="pickProfile(this.value)"></select>
+  </div>
   <div class="langmenu" id="langMenu" hidden>
     <div class="lm-title">Dashboard</div>
     <div class="seg notr"><button type="button" data-ui="en" onclick="setUiLang('en')">English</button><button type="button" data-ui="fr" onclick="setUiLang('fr')">Français</button></div>
@@ -186,6 +195,11 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
   <div class="card">
     <h3>Basics</h3>
     <div class="grid2">
+      <div><label for="PROFILE_NAME">Profile name <span class="hint">shown in the profile list</span></label>
+        <input type="text" id="PROFILE_NAME"></div>
+      <div><label>Other profiles</label>
+        <div class="row" style="margin-top:0"><button type="button" onclick="pickProfile('__new')">+ New profile</button>
+          <button type="button" id="deleteProfileBtn" onclick="deleteProfile()">Delete this profile</button></div></div>
       <div><label for="CANDIDATE_NAME">First name <span class="hint">used in the sorting instructions</span></label>
         <input type="text" id="CANDIDATE_NAME"></div>
       <div><label for="langBasics">Telegram language <span class="hint">summaries and Telegram messages</span></label>
@@ -222,7 +236,20 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
 
 <section id="telegram">
   <h2>Output: Telegram</h2>
-  <p class="lead">The bot that sends you the ads, with Keep / Reject buttons.</p>
+  <p class="lead">The bot that sends you the ads, with Keep / Reject buttons. Each profile has its own bot (two profiles may share one).</p>
+  <div class="card">
+    <h3>Bot of this profile</h3>
+    <div class="grid2">
+      <div><label for="BOT">Bot</label><select id="BOT"></select></div>
+      <div><label for="BOT_NAME">Bot name <span class="hint">for you, e.g. "Anna's alerts"</span></label><input type="text" id="BOT_NAME"></div>
+    </div>
+    <div class="row">
+      <button class="primary" onclick="saveFields(['BOT', 'BOT_NAME'], 'botMsg')">Save</button>
+      <button onclick="newBot()">+ New bot</button>
+    </div>
+    <p class="hint" style="margin-top:12px">The steps below set up the bot chosen here: its token, its chat, a test.</p>
+    <div class="msg" id="botMsg"></div>
+  </div>
   <div class="card">
     <h3>1. Create your bot</h3>
     <ol class="steps">
@@ -336,7 +363,7 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
       <li>Optional: filter those emails into a Gmail label and enter it below.</li>
     </ol>
     <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="SOURCE_FINN"> Use Finn alert emails</label>
-    <label for="GMAIL_FINN_LABEL">Gmail label <span class="hint">optional; empty = INBOX</span></label>
+    <label for="GMAIL_FINN_LABEL">Gmail label of this profile's Finn alerts <span class="hint">optional; empty = INBOX. Give each profile its own label when their Finn searches differ.</span></label>
     <input type="text" id="GMAIL_FINN_LABEL">
     <div class="row">
       <button class="primary" onclick="saveSources(['SOURCE_FINN','GMAIL_FINN_LABEL'], 'finnMsg')">Save</button>
@@ -365,7 +392,7 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
     </ol>
     <p class="hint">Only the alert emails are read: title, company and place. The tool never opens linkedin.com pages (LinkedIn's terms forbid scraping), so LinkedIn ads arrive with a "limited preview" note; open the link to read them.</p>
     <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="SOURCE_LINKEDIN"> Use LinkedIn alert emails</label>
-    <label for="GMAIL_LINKEDIN_LABEL">Gmail label <span class="hint">optional; empty = INBOX</span></label>
+    <label for="GMAIL_LINKEDIN_LABEL">Gmail label of this profile's LinkedIn alerts <span class="hint">optional; empty = INBOX</span></label>
     <input type="text" id="GMAIL_LINKEDIN_LABEL">
     <div class="row">
       <button class="primary" onclick="saveSources(['SOURCE_LINKEDIN','GMAIL_LINKEDIN_LABEL'], 'liMsg')">Save</button>
@@ -465,6 +492,8 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
 
 <script>
 const TOKEN = "{{TOKEN}}";
+let PROFILE = "";
+try { PROFILE = localStorage.getItem("profile") || ""; } catch {}
 const REMOTE = {{REMOTE}};
 const FR = {{FR}};
 let UI = "{{UI_LANG}}";
@@ -532,7 +561,7 @@ async function setAlertsLang(code) {
 async function rerender() {
   translatePage();
   await loadSettings().catch(e => toast(e.message));
-  loadProfile().catch(() => {});
+  await loadProfile().catch(() => {});
   const id = (location.hash || "#overview").slice(1);
   if (id === "prefs") renderPrefs();
   if (id === "history") loadHistory();
@@ -541,7 +570,7 @@ async function rerender() {
 }
 
 async function api(path, body) {
-  const opt = { headers: { "X-Token": TOKEN } };
+  const opt = { headers: { "X-Token": TOKEN, "X-Profile": PROFILE } };
   if (body !== undefined) { opt.method = "POST"; opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
   const r = await fetch(path, opt);
   let data;
@@ -592,7 +621,48 @@ async function loadSettings() {
     <div class="muni notr">${list.map(m => `<label><input type="checkbox" data-group="${esc(g)}" value="${esc(m)}" ${a.selected.includes(m) ? "checked" : ""}> ${esc(title(m))}</label>`).join("")}</div>`).join("");
   $("areaExtra").value = a.extra.map(title).join(", ");
   $("areaCounties").value = a.counties.map(title).join(", ");
+  if (settings.profile !== PROFILE) { PROFILE = settings.profile; try { localStorage.setItem("profile", PROFILE); } catch {} }
+  $("profileSel").innerHTML = settings.profiles.map(x => `<option value="${esc(x.id)}" ${x.id === PROFILE ? "selected" : ""}>${esc(x.name)}${x.issue ? " ⚠" : ""}</option>`).join("") +
+    `<option value="__new">${esc(tr("+ New profile…"))}</option>`;
+  $("deleteProfileBtn").disabled = settings.profiles.length < 2;
+  $("BOT").innerHTML = `<option value="">${esc(tr("(none)"))}</option>` + settings.bots.map(b =>
+    `<option value="${esc(b.id)}" ${b.id === settings.values.BOT ? "selected" : ""}>${esc(b.name || b.id)}${b.token_set ? "" : " " + esc(tr("(no token)"))}</option>`).join("");
+  document.querySelectorAll(".ptag").forEach(el => el.remove());
+  const pname = settings.profiles.find(x => x.id === PROFILE)?.name || "";
+  if (settings.profiles.length > 1) for (const id of ["prefs", "search", "telegram", "history"]) {
+    const h = document.querySelector(`#${id} h2`); if (h) h.insertAdjacentHTML("beforeend", `<span class="ptag notr">${esc(pname)}</span>`);
+  }
   langState();
+}
+async function pickProfile(id) {
+  if (id === "__new") {
+    const name = prompt(tr("Name of the new profile (e.g. Anna):"));
+    if (!name) { $("profileSel").value = PROFILE; return; }
+    try { id = (await api("/api/profiles", { name })).id; }
+    catch (e) { toast(e.message); $("profileSel").value = PROFILE; return; }
+    location.hash = "#search";
+  }
+  PROFILE = id;
+  try { localStorage.setItem("profile", id); } catch {}
+  profileEdited = false;
+  $("profile").value = "";
+  prefsChanged = false;
+  document.querySelectorAll(".msg").forEach(m => { m.className = "msg"; m.textContent = ""; });
+  await rerender();
+  if ((location.hash || "#overview") === "#prefs") loadPrefs();
+  toast(tr("Profile: {name}", { name: settings.profiles.find(x => x.id === PROFILE)?.name || PROFILE }));
+}
+async function deleteProfile() {
+  const name = settings.profiles.find(x => x.id === PROFILE)?.name || PROFILE;
+  if (!confirm(tr('Delete the profile "{name}"? Its profile text and history stay on this computer, but it stops receiving ads.', { name }))) return;
+  try { await api("/api/profiles/delete", { id: PROFILE }); PROFILE = ""; try { localStorage.removeItem("profile"); } catch {} await rerender(); toast(tr("Profile deleted.")); }
+  catch (e) { toast(e.message); }
+}
+async function newBot() {
+  const name = prompt(tr("Name of the new bot (for you, e.g. Anna's alerts):"));
+  if (name === null) return;
+  try { await api("/api/bots", { name }); await loadSettings(); msg("botMsg", "ok", tr("New bot added to this profile: now paste its token below (step 1) and link the chat (step 2).")); }
+  catch (e) { msg("botMsg", "bad", e.message); }
 }
 function title(s) { return s.toLowerCase().replace(/(^|[\s-])\S/g, c => c.toUpperCase()); }
 function toggleGroup(g, on) { document.querySelectorAll(`input[data-group="${g}"]`).forEach(c => c.checked = on); }
@@ -602,7 +672,7 @@ async function saveSearch() {
   await busy(btn, async () => {
     try {
       const body = {
-        CANDIDATE_NAME: $("CANDIDATE_NAME").value,
+        PROFILE_NAME: $("PROFILE_NAME").value, CANDIDATE_NAME: $("CANDIDATE_NAME").value,
         MESSAGE_MIN_SCORE: $("MESSAGE_MIN_SCORE").value, DIGEST_MIN_SCORE: $("DIGEST_MIN_SCORE").value,
         NORWEGIAN_REQUIRED: $("NORWEGIAN_REQUIRED").value,
         area: {
@@ -808,6 +878,8 @@ async function refreshStatus() {
     ["bad", tr("No scheduled run")];
   const alerts = (settings && settings.values.LANGUAGE) || "en";
   $("checks").innerHTML =
+    (settings && settings.profiles.length > 1 ? li(settings.profiles.every(x => !x.issue) ? "ok" : "warn", tr("Profiles"),
+      settings.profiles.map(x => esc(x.name) + (x.issue ? ": " + esc(tr(x.issue)) : " ✓")).join(" · "), "search") : "") +
     li(s.name ? "ok" : "warn", tr("Name"), s.name ? tr("Set") : tr("Not set"), "search") +
     li(prof[0], tr("Profile"), prof[1], "search") +
     li(tg[0], "Telegram", tg[1], "telegram") +

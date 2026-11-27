@@ -40,7 +40,7 @@ from dotenv import dotenv_values, load_dotenv
 from flask import Flask, abort, jsonify, redirect, request, send_file, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from . import config, db, finn, linkedin, listener, preferences, telegram, texts, triage
+from . import config, db, finn, linkedin, listener, preferences, profiles, telegram, texts, triage
 
 ROOT = config.ROOT
 ENV_PATH = ROOT / ".env"
@@ -63,6 +63,9 @@ PLAIN_KEYS = {"CANDIDATE_NAME", "LANGUAGE", "TELEGRAM_CHAT_ID", "GMAIL_ADDRESS",
               "FINN_FETCH_PAGES", "FINN_CONTACT_EMAIL",
               "NORWEGIAN_REQUIRED", "MESSAGE_MIN_SCORE", "DIGEST_MIN_SCORE",
               "SOURCE_NAV", "SOURCE_FINN", "SOURCE_LINKEDIN", "GMAIL_LINKEDIN_LABEL", "DASHBOARD_LANGUAGE"}
+# Settings of the selected profile (profiles.json) or of its bot, not of .env.
+PROFILE_KEYS = {"CANDIDATE_NAME", "LANGUAGE", "MESSAGE_MIN_SCORE", "DIGEST_MIN_SCORE", "NORWEGIAN_REQUIRED",
+                "GMAIL_FINN_LABEL", "GMAIL_LINKEDIN_LABEL", "TELEGRAM_CHAT_ID", "PROFILE_NAME", "BOT", "BOT_NAME"}
 BOOL_KEYS = {"FINN_FETCH_PAGES", "SOURCE_NAV", "SOURCE_FINN", "SOURCE_LINKEDIN"}
 AREA_GROUPS = {
     "Oslo": ["OSLO"],
@@ -145,6 +148,14 @@ def _guard():
             return redirect("/login")
     if request.path.startswith("/api/") and request.headers.get("X-Token") != TOKEN:
         abort(403)
+    # The profile picked in the page (each request works on it).
+    pid = request.headers.get("X-Profile", "")
+    profiles._local.profile = profiles.get(pid) if pid else None
+
+
+@app.teardown_request
+def _profile_done(exc=None):
+    profiles._local.profile = None
 
 
 @app.after_request
@@ -174,8 +185,7 @@ def _any_error(e):
 
 
 def telegram_safe(text: str) -> str:
-    tok = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    return text.replace(tok, "***") if tok else text
+    return listener.safe(text)
 
 
 # ---------- .env ----------
@@ -290,26 +300,31 @@ def last_runs() -> list[str]:
 
 
 def db_stats() -> dict:
-    if not config.DB_PATH.exists():
-        return {}
-    con = sqlite3.connect(config.DB_PATH)
-    q = lambda sql: con.execute(sql).fetchone()[0]  # noqa: E731
+    """Numbers for the selected profile."""
+    pid = profiles.current().id
+    con = db.connect()
+    q = lambda sql: con.execute(sql, {"p": pid}).fetchone()[0]  # noqa: E731
+    last = "d.id=(SELECT MAX(id) FROM decisions WHERE uuid=d.uuid AND profile_id=:p)"
     try:
         return dict(
-            ads=q("SELECT count(*) FROM ads"),
-            sorted=q("SELECT count(*) FROM ads WHERE triaged_at IS NOT NULL"),
-            relevant=q("SELECT count(*) FROM ads WHERE relevant=1"),
-            sent=q("SELECT count(*) FROM ads WHERE sent_at IS NOT NULL"),
-            kept=q("SELECT count(DISTINCT uuid) FROM decisions d WHERE decision='keep' AND id=(SELECT MAX(id) FROM decisions WHERE uuid=d.uuid)"),
-            rejected=q("SELECT count(DISTINCT uuid) FROM decisions d WHERE decision='reject' AND id=(SELECT MAX(id) FROM decisions WHERE uuid=d.uuid)"),
-            last_nav=q("SELECT value FROM meta WHERE key='nav_last_success'"),
+            ads=q("SELECT count(*) FROM matches WHERE profile_id=:p"),
+            sorted=q("SELECT count(*) FROM matches WHERE profile_id=:p AND triaged_at IS NOT NULL"),
+            relevant=q("SELECT count(*) FROM matches WHERE profile_id=:p AND relevant=1"),
+            sent=q("SELECT count(*) FROM matches WHERE profile_id=:p AND sent_at IS NOT NULL"),
+            kept=q(f"SELECT count(DISTINCT uuid) FROM decisions d WHERE profile_id=:p AND decision='keep' AND {last}"),
+            rejected=q(f"SELECT count(DISTINCT uuid) FROM decisions d WHERE profile_id=:p AND decision='reject' AND {last}"),
+            last_nav=db.get_meta(con, "nav_last_success"),
         )
     finally:
         con.close()
 
 
+def profile_issue(p) -> str:
+    return profiles.issue(p)
+
+
 def profile_state() -> dict:
-    p = config.PROFILE_PATH
+    p = profiles.current().profile_path
     if not p.exists():
         return dict(exists=False, is_template=True)
     text = p.read_text(encoding="utf-8")
@@ -335,13 +350,27 @@ def get_settings():
     munis = _split(env.get("TARGET_MUNICIPALITIES")) or DEFAULT_MUNICIPALITIES
     counties = _split(env.get("TARGET_COUNTIES")) or DEFAULT_COUNTIES
     known = {m for g in AREA_GROUPS.values() for m in g}
+    p = profiles.current()
+    bot = profiles.get_bot(p.bot)
+    munis, counties = p.target_municipalities, p.target_counties
+    values = {k: env.get(k, "") for k in PLAIN_KEYS}
+    values.update(CANDIDATE_NAME=p.candidate, LANGUAGE=p.language, MESSAGE_MIN_SCORE=str(p.message_min),
+                  DIGEST_MIN_SCORE=str(p.digest_min), NORWEGIAN_REQUIRED=p.norwegian,
+                  GMAIL_FINN_LABEL=p.finn_label, GMAIL_LINKEDIN_LABEL=p.linkedin_label,
+                  TELEGRAM_CHAT_ID=bot.chat_id if bot else "", PROFILE_NAME=p.name, BOT=p.bot,
+                  BOT_NAME=bot.name if bot else "")
+    secrets_set = {k: bool(env.get(k)) for k in SECRET_KEYS}
+    secrets_set["TELEGRAM_BOT_TOKEN"] = bool(bot and bot.token)
     return jsonify(
         ok=True,
-        values={k: env.get(k, "") for k in PLAIN_KEYS},
-        secrets_set={k: bool(env.get(k)) for k in SECRET_KEYS},
+        values=values,
+        secrets_set=secrets_set,
         area=dict(groups=AREA_GROUPS, selected=sorted(munis & known), extra=sorted(munis - known),
                   counties=sorted(counties)),
         env_exists=ENV_PATH.exists(),
+        profile=p.id,
+        profiles=[dict(id=x.id, name=x.name or x.id, issue=profile_issue(x)) for x in profiles.all_profiles()],
+        bots=[b.public() for b in profiles.all_bots()],
     )
 
 
@@ -349,7 +378,7 @@ def get_settings():
 def save_settings():
     body = request.get_json(force=True) or {}
     updates = {}
-    for k in PLAIN_KEYS - {"TARGET_MUNICIPALITIES", "TARGET_COUNTIES"}:
+    for k in (PLAIN_KEYS | PROFILE_KEYS) - {"TARGET_MUNICIPALITIES", "TARGET_COUNTIES"}:
         if k in body:
             updates[k] = str(body[k]).strip()
     for k in ("LANGUAGE", "DASHBOARD_LANGUAGE"):
@@ -383,23 +412,119 @@ def save_settings():
     for k in body.get("clear") or []:
         if k in SECRET_KEYS:
             updates[k] = ""
+    area = None
     if "area" in body:
         munis = {m.strip().upper() for m in body["area"].get("municipalities") or [] if m.strip()}
         munis |= _split(body["area"].get("extra", ""))
         counties = {c.strip().upper() for c in body["area"].get("counties") or [] if c.strip()}
         if not munis:
             raise UserError("Pick at least one municipality")
-        updates["TARGET_MUNICIPALITIES"] = "" if munis == DEFAULT_MUNICIPALITIES else ",".join(sorted(munis))
-        updates["TARGET_COUNTIES"] = "" if counties == DEFAULT_COUNTIES else ",".join(sorted(counties))
-    write_env(updates)
-    return jsonify(ok=True, saved=sorted(updates))
+        area = ([] if munis == DEFAULT_MUNICIPALITIES else sorted(munis),
+                [] if counties == DEFAULT_COUNTIES else sorted(counties))
+    saved = save_profile_settings({k: updates.pop(k) for k in list(updates) if k in PROFILE_KEYS},
+                                  updates.pop("TELEGRAM_BOT_TOKEN", None), area)
+    if updates:
+        write_env(updates)
+    return jsonify(ok=True, saved=sorted(updates) + saved)
+
+
+def save_profile_settings(changes: dict, token: str | None, area) -> list:
+    """Save the selected profile's settings (and its bot's) in profiles.json, and the bot token in .env."""
+    if not changes and token is None and area is None:
+        return []
+    data = profiles.load()  # without profiles.json: the profile from .env, saved from now on
+    pid = profiles.current().id
+    p = next(x for x in data["profiles"] if x.id == pid)
+    if "BOT" in changes:
+        if changes["BOT"] and not any(b.id == changes["BOT"] for b in data["bots"]):
+            raise UserError("Unknown bot")
+        p.bot = changes.pop("BOT")
+    if "PROFILE_NAME" in changes:
+        name = changes.pop("PROFILE_NAME")[:40]
+        if not name:
+            raise UserError("The profile needs a name")
+        if any(x.name.lower() == name.lower() and x.id != p.id for x in data["profiles"]):
+            raise UserError("Another profile already has this name")
+        p.name = name
+    fields = dict(CANDIDATE_NAME="candidate", LANGUAGE="language", NORWEGIAN_REQUIRED="norwegian",
+                  GMAIL_FINN_LABEL="finn_label", GMAIL_LINKEDIN_LABEL="linkedin_label")
+    for key, attr in fields.items():
+        if key in changes:
+            setattr(p, attr, changes.pop(key))
+    for key, attr in (("MESSAGE_MIN_SCORE", "message_min"), ("DIGEST_MIN_SCORE", "digest_min")):
+        if key in changes:
+            setattr(p, attr, int(changes.pop(key)))
+    if p.digest_min > p.message_min:
+        raise UserError("The digest minimum must not be above the message minimum")
+    if area is not None:
+        p.municipalities, p.counties = area
+    bot = next((b for b in data["bots"] if b.id == p.bot), None)
+    if "BOT_NAME" in changes or "TELEGRAM_CHAT_ID" in changes or token is not None:
+        if bot is None:
+            raise UserError("Choose or create a bot for this profile first")
+        if "BOT_NAME" in changes:
+            bot.name = changes.pop("BOT_NAME")[:40]
+        if "TELEGRAM_CHAT_ID" in changes:
+            bot.chat_id = changes.pop("TELEGRAM_CHAT_ID")
+    profiles.save(data)
+    if token is not None:
+        write_env({bot.token_env: token})
+    return ["profile"]
+
+
+@app.post("/api/profiles")
+def create_profile():
+    """A new profile (another candidate or alert), with default settings and no bot yet."""
+    name = str((request.get_json(force=True) or {}).get("name", "")).strip()[:40]
+    if not name:
+        raise UserError("The profile needs a name")
+    data = profiles.load()
+    if any(x.name.lower() == name.lower() for x in data["profiles"]):
+        raise UserError("Another profile already has this name")
+    p = profiles.Profile(id=profiles.next_id("p", data["profiles"]), name=name, candidate=name, bot="",
+                         language=data["profiles"][0].language)
+    data["profiles"].append(p)
+    profiles.save(data)
+    return jsonify(ok=True, id=p.id)
+
+
+@app.post("/api/profiles/delete")
+def delete_profile():
+    """Remove a profile from the list. Its files and history stay on disk."""
+    pid = str((request.get_json(force=True) or {}).get("id", ""))
+    data = profiles.load()
+    if len(data["profiles"]) < 2:
+        raise UserError("The last profile cannot be deleted")
+    if not any(x.id == pid for x in data["profiles"]):
+        raise UserError("Unknown profile")
+    data["profiles"] = [x for x in data["profiles"] if x.id != pid]
+    profiles.save(data)
+    return jsonify(ok=True)
+
+
+@app.post("/api/bots")
+def create_bot():
+    """A new bot entry for the selected profile; its token goes to .env (BOT_<ID>_TOKEN)."""
+    name = str((request.get_json(force=True) or {}).get("name", "")).strip()[:40]
+    data = profiles.load()
+    bot = profiles.Bot(id=profiles.next_id("b", data["bots"]), name=name)
+    bot.token_env = f"BOT_{bot.id.upper()}_TOKEN"
+    data["bots"].append(bot)
+    pid = profiles.current().id
+    next(x for x in data["profiles"] if x.id == pid).bot = bot.id
+    profiles.save(data)
+    return jsonify(ok=True, id=bot.id)
+
+
+def _bot():
+    return profiles.get_bot(profiles.current().bot)
 
 
 def _listener_active() -> bool:
     try:
         con = db.connect()
         try:
-            return listener.active(con)
+            return bool(_bot()) and listener.active(con, _bot().id)
         finally:
             con.close()
     except Exception:
@@ -421,13 +546,15 @@ def status():
         ai=dict(provider=provider, gemini_key=bool(env.get("GEMINI_API_KEY")),
                 gemini_model=env.get("GEMINI_MODEL") or "gemini-flash-latest"),
         claude=claude_status(),
-        telegram=dict(token=bool(env.get("TELEGRAM_BOT_TOKEN")), chat_id=bool(env.get("TELEGRAM_CHAT_ID")),
+        telegram=dict(token=bool(_bot() and _bot().token), chat_id=bool(_bot() and str(_bot().chat_id).strip()),
                       listener=_listener_active()),
         gmail=dict(configured=bool(env.get("GMAIL_ADDRESS") and env.get("GMAIL_APP_PASSWORD"))),
         sources=dict(nav=_flag(env, "SOURCE_NAV", True), finn=_flag(env, "SOURCE_FINN", True),
                      linkedin=_flag(env, "SOURCE_LINKEDIN", False)),
         profile=profile_state(),
-        name=bool(env.get("CANDIDATE_NAME")),
+        name=bool(profiles.current().candidate),
+        current=dict(id=profiles.current().id, name=profiles.current().name or profiles.current().id,
+                     issue=profile_issue(profiles.current())),
         tasks=tasks, tasks_error=tasks_error,
         db=db_stats(), last_runs=last_runs(),
         run=dict(running=running, mode=_run["mode"], started=_run["started"]),
@@ -470,9 +597,14 @@ def set_language():
             updates[key] = value
     if not updates:
         raise UserError("Nothing to change")
-    write_env(updates)
-    sent, error = None, None
     if "LANGUAGE" in updates:
+        save_profile_settings({"LANGUAGE": updates.pop("LANGUAGE")}, None, None)
+        profiles._local.profile = profiles.get(profiles.current().id)  # reload: new language
+        updates["_alerts"] = "1"
+    if updates.keys() - {"_alerts"}:
+        write_env({k: v for k, v in updates.items() if k != "_alerts"})
+    sent, error = None, None
+    if "_alerts" in updates:
         try:
             telegram.send_text(texts.t("language_set"))
             sent = True
@@ -686,16 +818,15 @@ def save_preferences():
 @app.get("/api/feedback")
 def feedback():
     """Every ad the user clicked or replied to, newest first (the examples the AI learns from)."""
-    if not config.DB_PATH.exists():
-        return jsonify(ok=True, rows=[])
-    con = sqlite3.connect(config.DB_PATH)
-    con.row_factory = sqlite3.Row
+    con = db.connect()
     rows = con.execute(
         "SELECT a.title, a.employer, a.url, a.source, "
-        "(SELECT decision FROM decisions WHERE uuid=a.uuid ORDER BY id DESC LIMIT 1) AS decision, "
-        "(SELECT group_concat(text, ' / ') FROM notes WHERE uuid=a.uuid) AS notes "
-        "FROM ads a WHERE EXISTS (SELECT 1 FROM decisions WHERE uuid=a.uuid) "
-        "OR EXISTS (SELECT 1 FROM notes WHERE uuid=a.uuid) ORDER BY a.sent_at DESC"
+        "(SELECT decision FROM decisions WHERE uuid=a.uuid AND profile_id=:p ORDER BY id DESC LIMIT 1) AS decision, "
+        "(SELECT group_concat(text, ' / ') FROM notes WHERE uuid=a.uuid AND profile_id=:p) AS notes "
+        "FROM ads a LEFT JOIN matches m ON m.uuid=a.uuid AND m.profile_id=:p "
+        "WHERE EXISTS (SELECT 1 FROM decisions WHERE uuid=a.uuid AND profile_id=:p) "
+        "OR EXISTS (SELECT 1 FROM notes WHERE uuid=a.uuid AND profile_id=:p) ORDER BY m.sent_at DESC",
+        {"p": profiles.current().id},
     ).fetchall()
     con.close()
     return jsonify(ok=True, rows=[dict(r) for r in rows])
@@ -725,7 +856,7 @@ def gemini_test():
 
 @app.get("/api/profile")
 def get_profile():
-    p = config.PROFILE_PATH
+    p = profiles.current().profile_path
     if p.exists():
         return jsonify(ok=True, text=p.read_text(encoding="utf-8"), from_template=False)
     tmpl = PROFILE_EXAMPLE.read_text(encoding="utf-8") if PROFILE_EXAMPLE.exists() else ""
@@ -737,7 +868,9 @@ def save_profile():
     text = (request.get_json(force=True) or {}).get("text", "")
     if len(text.strip()) < 50:
         raise UserError("The profile looks empty: describe your experience and target roles")
-    config.PROFILE_PATH.write_text(text.replace("\r\n", "\n"), encoding="utf-8")
+    path = profiles.current().profile_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text.replace("\r\n", "\n"), encoding="utf-8")
     return jsonify(ok=True)
 
 
@@ -807,15 +940,14 @@ def run_state():
 
 @app.get("/api/history")
 def history():
-    if not config.DB_PATH.exists():
-        return jsonify(ok=True, rows=[])
-    con = sqlite3.connect(config.DB_PATH)
-    con.row_factory = sqlite3.Row
+    con = db.connect()
     rows = con.execute(
-        "SELECT a.uuid, a.title, a.employer, a.municipal, a.score, a.source, a.url, a.sent_at, a.norwegian_required, "
-        "(SELECT decision FROM decisions WHERE uuid=a.uuid ORDER BY id DESC LIMIT 1) AS decision, "
-        "(SELECT group_concat(text, ' / ') FROM notes WHERE uuid=a.uuid) AS notes "
-        "FROM ads a WHERE a.sent_at IS NOT NULL ORDER BY a.sent_at DESC LIMIT 100"
+        "SELECT a.uuid, a.title, a.employer, a.municipal, m.score, a.source, a.url, m.sent_at, m.norwegian_required, "
+        "(SELECT decision FROM decisions WHERE uuid=a.uuid AND profile_id=:p ORDER BY id DESC LIMIT 1) AS decision, "
+        "(SELECT group_concat(text, ' / ') FROM notes WHERE uuid=a.uuid AND profile_id=:p) AS notes "
+        "FROM matches m JOIN ads a ON a.uuid=m.uuid WHERE m.profile_id=:p AND m.sent_at IS NOT NULL "
+        "ORDER BY m.sent_at DESC LIMIT 100",
+        {"p": profiles.current().id},
     ).fetchall()
     con.close()
     return jsonify(ok=True, rows=[dict(r) for r in rows])

@@ -42,7 +42,7 @@ def test_kit_is_sent_once_as_reply(con, sent, monkeypatch):
     prompts = []
     monkeypatch.setattr(triage, "ai_json", lambda prompt, schema: prompts.append(prompt) or KIT)
     add_ad(con, "a", application_url="https://acme.no/apply")
-    con.execute("INSERT INTO sent_messages(message_id, uuid, sent_at) VALUES(7, 'a', 'x')")
+    con.execute("INSERT INTO messages(bot_id, message_id, profile_id, uuid, sent_at) VALUES('b1', 7, 'p1', 'a', 'x')")
     decide(con, "a", "keep", 1)
     assert kit.send_kits(con) == 1
     assert "B2B sales in Oslo." in prompts[0] and "Sell B2B software." in prompts[0]
@@ -81,7 +81,7 @@ def test_telegram_failure_keeps_the_ai_answer(con, sent, monkeypatch):
 
 def test_missing_update_numbers_send_a_warning(con, monkeypatch):
     from jobalerts import db
-    db.set_meta(con, "tg_offset", "100")
+    db.set_meta(con, "tg_offset:b1", "100")
     batches = [[{"update_id": 103, "message": {"from": {"id": 42}, "chat": {"id": 42}, "text": "hi"}}], []]
     texts = []
 
@@ -125,14 +125,18 @@ def test_runs_leave_telegram_to_an_active_listener(con, monkeypatch):
     from datetime import datetime, timedelta, timezone
     from jobalerts import db, listener, run
     assert not listener.active(con)
-    db.set_meta(con, listener.HEARTBEAT, db.now_iso())
-    assert listener.active(con)
+    key = listener.HEARTBEAT + ":b1"
+    db.set_meta(con, key, db.now_iso())
+    assert listener.active(con, "b1") and not listener.active(con, "b2")
     old = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(timespec="seconds")
-    db.set_meta(con, listener.HEARTBEAT, old)
-    assert not listener.active(con)
+    db.set_meta(con, key, old)
+    assert not listener.active(con, "b1")
 
-    db.set_meta(con, listener.HEARTBEAT, db.now_iso())
     collected = []
     monkeypatch.setattr(run.db, "connect", lambda: con)
-    monkeypatch.setattr(telegram, "collect_updates", lambda c, wait=0: collected.append(1))
-    assert run.run(collect_only=True) == 0 and collected == []
+    monkeypatch.setattr(telegram, "collect_updates", lambda c, wait=0, bot=None: collected.append(bot.id))
+    monkeypatch.setattr(run.kit, "send_kits", lambda c: 0)
+    assert run.run(collect_only=True) == 0 and collected == ["b1"]  # stale heartbeat: the run collects
+    db.set_meta(con, key, db.now_iso())
+    collected.clear()
+    assert run.run(collect_only=True) == 0 and collected == []  # active listener: left to it

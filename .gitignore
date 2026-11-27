@@ -15,3 +15,7 @@ logs/
 __pycache__/
 *.pyc
 .venv/
+
+# Profiles (one per candidate): settings, profile texts and preferences
+profiles.json
+profiles/

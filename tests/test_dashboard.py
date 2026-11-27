@@ -59,16 +59,16 @@ def test_settings_never_return_secrets(client):
 
 
 def test_save_settings_area_and_secrets(client, env_file):
+    from jobalerts import profiles
     r = client.post("/api/settings", base_url=BASE, headers=H, json={
         "CANDIDATE_NAME": "Kari", "LANGUAGE": "en", "TELEGRAM_BOT_TOKEN": "",  # empty secret = keep
         "area": {"municipalities": ["OSLO", "ASKER"], "extra": "sandvika, Fornebu", "counties": ["Oslo"]},
     })
     assert r.status_code == 200, r.get_json()
-    values = dotenv_values(env_file)
-    assert values["CANDIDATE_NAME"] == "Kari"
-    assert values["TELEGRAM_BOT_TOKEN"] == "secret:1"
-    assert values["TARGET_MUNICIPALITIES"] == "ASKER,FORNEBU,OSLO,SANDVIKA"
-    assert values["TARGET_COUNTIES"] == "OSLO"
+    p = profiles.all_profiles()[0]  # profile settings: profiles.json
+    assert p.candidate == "Kari"
+    assert p.municipalities == ["ASKER", "FORNEBU", "OSLO", "SANDVIKA"] and p.counties == ["OSLO"]
+    assert dotenv_values(env_file)["TELEGRAM_BOT_TOKEN"] == "secret:1"
 
 
 def test_save_gemini_settings(client, env_file):
@@ -103,20 +103,23 @@ def test_feedback_lists_clicks_and_replies(client, con):
 
 
 def test_source_switches_are_saved_as_booleans(client, env_file):
+    from jobalerts import profiles
     r = client.post("/api/settings", base_url=BASE, headers=H, json={
         "SOURCE_NAV": "false", "SOURCE_LINKEDIN": "on", "GMAIL_LINKEDIN_LABEL": "linkedin-jobs"})
     assert r.status_code == 200
     values = dotenv_values(env_file)
-    assert (values["SOURCE_NAV"], values["SOURCE_LINKEDIN"], values["GMAIL_LINKEDIN_LABEL"]) == ("false", "true", "linkedin-jobs")
+    assert (values["SOURCE_NAV"], values["SOURCE_LINKEDIN"]) == ("false", "true")
+    assert profiles.all_profiles()[0].linkedin_label == "linkedin-jobs"
 
 
 def test_default_area_is_stored_empty(client, env_file):
+    from jobalerts import profiles
     defaults = sorted(dashboard.DEFAULT_MUNICIPALITIES)
     r = client.post("/api/settings", base_url=BASE, headers=H, json={
         "area": {"municipalities": defaults, "extra": "", "counties": ["Oslo", "Akershus"]}})
     assert r.status_code == 200
-    values = dotenv_values(env_file)
-    assert values["TARGET_MUNICIPALITIES"] == "" and values["TARGET_COUNTIES"] == ""
+    p = profiles.all_profiles()[0]
+    assert p.municipalities == [] and p.counties == []
 
 
 @pytest.mark.parametrize("body, error", [
@@ -197,13 +200,11 @@ def test_page_inlines_french_and_ui_language(client, env_file):
 
 
 def test_language_endpoint_confirms_in_telegram(client, env_file, monkeypatch):
-    from jobalerts import config, telegram, texts
+    from jobalerts import profiles, telegram, texts
     sent = []
-    monkeypatch.setattr(config, "LANGUAGE", config.LANGUAGE)  # restored after the test
     monkeypatch.setattr(telegram, "send_text", lambda text: sent.append(text))
-    monkeypatch.setattr(dashboard, "reload_settings", lambda: setattr(config, "LANGUAGE", dotenv_values(env_file)["LANGUAGE"]))
     r = client.post("/api/language", base_url=BASE, headers=H, json={"alerts": "fr"}).get_json()
-    assert r["telegram_sent"] is True and dotenv_values(env_file)["LANGUAGE"] == "fr"
+    assert r["telegram_sent"] is True and profiles.all_profiles()[0].language == "fr"
     assert sent == [texts.TEXTS["fr"]["language_set"]]
     r = client.post("/api/language", base_url=BASE, headers=H, json={"dashboard": "fr"}).get_json()
     assert r["telegram_sent"] is None and dotenv_values(env_file)["DASHBOARD_LANGUAGE"] == "fr" and len(sent) == 1
@@ -216,9 +217,10 @@ def test_language_saved_even_if_telegram_fails(client, env_file, monkeypatch):
     def boom(text):
         raise RuntimeError("no token")
     monkeypatch.setattr(telegram, "send_text", boom)
-    r = client.post("/api/language", base_url=BASE, headers=H, json={"alerts": "en"}).get_json()
+    r = client.post("/api/language", base_url=BASE, headers=H, json={"alerts": "fr"}).get_json()
     assert r["ok"] and r["telegram_sent"] is False and "no token" in r["telegram_error"]
-    assert dotenv_values(env_file)["LANGUAGE"] == "en"
+    from jobalerts import profiles
+    assert profiles.all_profiles()[0].language == "fr"
 
 
 REMOTE = "https://my-pc.tail1234.ts.net:8787"
@@ -290,3 +292,35 @@ def test_secrets_of_remote_access_are_never_returned(remote):
     remote.post("/api/remote", base_url=BASE, headers=H, json={"password": "correct horse"})
     data = str(remote.get("/api/settings", base_url=BASE, headers=H).get_json())
     assert "DASHBOARD_PASSWORD_HASH" not in data and "test-secret" not in data
+
+
+def test_profiles_and_bots(client, env_file, monkeypatch, tmp_path):
+    from jobalerts import profiles
+    # the first save turns the .env setup into profile p1 with bot b1
+    client.post("/api/settings", base_url=BASE, headers=H, json={"PROFILE_NAME": "Alex"})
+    r = client.post("/api/profiles", base_url=BASE, headers=H, json={"name": "Anna"}).get_json()
+    assert r["id"] == "p2"
+    assert client.post("/api/profiles", base_url=BASE, headers=H, json={"name": "anna"}).status_code == 400
+    h2 = H | {"X-Profile": "p2"}
+    data = client.get("/api/settings", base_url=BASE, headers=h2).get_json()
+    assert data["profile"] == "p2" and data["values"]["BOT"] == "" and data["secrets_set"]["TELEGRAM_BOT_TOKEN"] is False
+    assert {p["id"]: p["issue"] for p in data["profiles"]}["p2"] == "no Telegram bot chosen"
+    # a second bot for Anna: token in .env under its own key, chat id in profiles.json
+    assert client.post("/api/bots", base_url=BASE, headers=h2, json={"name": "Anna bot"}).get_json()["id"] == "b2"
+    r = client.post("/api/settings", base_url=BASE, headers=h2, json={
+        "TELEGRAM_BOT_TOKEN": "222:abc", "TELEGRAM_CHAT_ID": "77", "CANDIDATE_NAME": "Kari",
+        "GMAIL_FINN_LABEL": "finn-anna"})
+    assert r.status_code == 200, r.get_json()
+    assert dotenv_values(env_file)["BOT_B2_TOKEN"] == "222:abc"
+    assert dotenv_values(env_file)["TELEGRAM_BOT_TOKEN"] == "secret:1"  # Alex's bot untouched
+    p1, p2 = profiles.all_profiles()
+    assert (p1.name, p1.bot, p2.bot, p2.candidate, p2.finn_label) == ("Alex", "b1", "b2", "Kari", "finn-anna")
+    assert profiles.get_bot("b2").chat_id == "77"
+    # each profile has its own profile text
+    client.post("/api/profile", base_url=BASE, headers=h2, json={"text": "Kari: barista, 5 years, Oslo. " * 3})
+    assert p2.profile_path.read_text(encoding="utf-8").startswith("Kari: barista")
+    assert "Kari" not in client.get("/api/profile", base_url=BASE, headers=H).get_json()["text"]
+    # unknown bot refused; the last profile cannot be deleted
+    assert client.post("/api/settings", base_url=BASE, headers=h2, json={"BOT": "b9"}).status_code == 400
+    assert client.post("/api/profiles/delete", base_url=BASE, headers=H, json={"id": "p2"}).status_code == 200
+    assert client.post("/api/profiles/delete", base_url=BASE, headers=H, json={"id": "p1"}).status_code == 400

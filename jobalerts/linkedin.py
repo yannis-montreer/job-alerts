@@ -10,7 +10,7 @@ The parser follows the usual plain-text layout of LinkedIn job alerts: for each 
 import logging
 import re
 
-from . import config, db, mail
+from . import config, db, mail, profiles
 from .mail import in_target
 
 log = logging.getLogger(__name__)
@@ -57,44 +57,53 @@ def clean_location(location: str) -> str:
     return COUNTRY_RE.sub("", loc).strip(" ,")
 
 
-def check_connection(days: int = 14) -> dict:
-    box = mail.mailbox("GMAIL_LINKEDIN_LABEL")
+def check_connection(days: int = 14, profile=None) -> dict:
+    p = profile or profiles.current()
+    box = p.linkedin_mailbox
     texts = mail.alert_texts(ALERT_SENDER, box, mail.days_ago(days))
     ads = [ad for text in texts for ad in parse_alert_text(text)]
     return dict(mailbox=box, days=days, emails=len(texts), ads=len(ads),
-                in_area=sum(in_target(clean_location(ad["location"])) for ad in ads))
+                in_area=sum(in_target(clean_location(ad["location"]), p) for ad in ads))
 
 
-def fetch_new_ads(con):
+def fetch_new_ads(con, profile_list=None):
+    """Same as Finn: each profile's LinkedIn mailbox, ads handed to the profiles in whose area they are."""
     if not config.SOURCE_LINKEDIN:
         return [], {}
     if not mail.credentials():
         log.info("LinkedIn: GMAIL_ADDRESS / GMAIL_APP_PASSWORD not set, source skipped")
         return [], {}
-    texts = mail.alert_texts(ALERT_SENDER, mail.mailbox("GMAIL_LINKEDIN_LABEL"),
-                             mail.since_for(con, "linkedin_last_success"))
-    stats = dict(emails=len(texts), ads=0, out_of_area=0, seen=0, new=0)
+    stats = dict(emails=0, ads=0, out_of_area=0, seen=0, new=0)
     new_ads = []
-    for text in texts:
-        for ad in parse_alert_text(text):
-            stats["ads"] += 1
-            uuid = f"linkedin:{ad['id']}"
-            location = clean_location(ad["location"])
-            if db.is_seen(con, uuid):
-                stats["seen"] += 1
-                continue
-            if not in_target(location):
-                stats["out_of_area"] += 1
-                continue
-            record = dict(
-                uuid=uuid, date_modified=None, title=ad["title"], employer=ad["company"],
-                municipal=location.upper() or None,
-                url=f"https://www.linkedin.com/jobs/view/{ad['id']}/", application_url=None,
-                description=LIMITED_INFO, source="linkedin",
-            )
-            if db.insert_ad(con, record):
-                stats["new"] += 1
-                new_ads.append(record)
-    db.set_meta(con, "linkedin_last_success", db.now_iso())
+    for box, group in mail.by_mailbox(profile_list or profiles.all_profiles(), "linkedin_mailbox").items():
+        key = f"linkedin_last_success:{box}"
+        texts = mail.alert_texts(ALERT_SENDER, box, mail.since_for(con, key, "linkedin_last_success"))
+        stats["emails"] += len(texts)
+        for text in texts:
+            for ad in parse_alert_text(text):
+                stats["ads"] += 1
+                uuid = f"linkedin:{ad['id']}"
+                location = clean_location(ad["location"])
+                wanted = [p for p in group if in_target(location, p)]
+                if db.is_seen(con, uuid):
+                    stats["seen"] += 1
+                    for p in wanted:
+                        db.add_match(con, p.id, uuid)
+                    continue
+                if not wanted:
+                    stats["out_of_area"] += 1
+                    continue
+                record = dict(
+                    uuid=uuid, date_modified=None, title=ad["title"], employer=ad["company"],
+                    municipal=location.upper() or None,
+                    url=f"https://www.linkedin.com/jobs/view/{ad['id']}/", application_url=None,
+                    description=LIMITED_INFO, source="linkedin",
+                )
+                if db.insert_ad(con, record):
+                    stats["new"] += 1
+                    new_ads.append(record)
+                for p in wanted:
+                    db.add_match(con, p.id, uuid)
+        db.set_meta(con, key, db.now_iso())
     log.info("LinkedIn: %s", stats)
     return new_ads, stats

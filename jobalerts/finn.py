@@ -20,7 +20,7 @@ import time
 
 import requests
 
-from . import config, db, mail
+from . import config, db, mail, profiles
 from .mail import in_target  # noqa: F401  (also used by tests)
 
 log = logging.getLogger(__name__)
@@ -57,44 +57,56 @@ def parse_alert_text(text: str) -> list[dict]:
     return ads
 
 
-def check_connection(days: int = 14) -> dict:
-    """Setup check: count Finn alert emails and ads of the last `days` days."""
-    box = mail.mailbox("GMAIL_FINN_LABEL")
+def check_connection(days: int = 14, profile=None) -> dict:
+    """Setup check: count Finn alert emails and ads of the last `days` days, for a profile."""
+    p = profile or profiles.current()
+    box = p.finn_mailbox
     texts = mail.alert_texts(ALERT_SENDER, box, mail.days_ago(days))
     ads = [ad for text in texts for ad in parse_alert_text(text)]
     return dict(mailbox=box, days=days, emails=len(texts), ads=len(ads),
-                in_area=sum(in_target(ad["location"]) for ad in ads))
+                in_area=sum(in_target(ad["location"], p) for ad in ads))
 
 
-def fetch_new_ads(con):
+def fetch_new_ads(con, profile_list=None):
+    """Read each profile's Finn mailbox (label); hand each ad to the profiles reading that
+    mailbox whose area it is in. An ad already known is still handed to a profile that does
+    not have it yet (e.g. the same ad in two profiles' alerts)."""
     if not config.SOURCE_FINN:
         return [], {}
     if not mail.credentials():
         log.info("Finn: GMAIL_ADDRESS / GMAIL_APP_PASSWORD not set, source skipped")
         return [], {}
-    texts = mail.alert_texts(ALERT_SENDER, mail.mailbox("GMAIL_FINN_LABEL"), mail.since_for(con, "finn_last_success"))
-    stats = dict(emails=len(texts), ads=0, out_of_area=0, seen=0, new=0)
+    stats = dict(emails=0, ads=0, out_of_area=0, seen=0, new=0)
     new_ads = []
-    for text in texts:
-        for ad in parse_alert_text(text):
-            stats["ads"] += 1
-            uuid = f"finn:{ad['code']}"
-            if db.is_seen(con, uuid):
-                stats["seen"] += 1
-                continue
-            if not in_target(ad["location"]):
-                stats["out_of_area"] += 1
-                continue
-            record = dict(
-                uuid=uuid, date_modified=None, title=ad["title"], employer=ad["employer"],
-                municipal=ad["location"].upper() or None,
-                url=f"https://www.finn.no/{ad['code']}", application_url=None,
-                description=LIMITED_INFO, source="finn",
-            )
-            if db.insert_ad(con, record):
-                stats["new"] += 1
-                new_ads.append(record)
-    db.set_meta(con, "finn_last_success", db.now_iso())
+    for box, group in mail.by_mailbox(profile_list or profiles.all_profiles(), "finn_mailbox").items():
+        key = f"finn_last_success:{box}"
+        texts = mail.alert_texts(ALERT_SENDER, box, mail.since_for(con, key, "finn_last_success"))
+        stats["emails"] += len(texts)
+        for text in texts:
+            for ad in parse_alert_text(text):
+                stats["ads"] += 1
+                uuid = f"finn:{ad['code']}"
+                wanted = [p for p in group if in_target(ad["location"], p)]
+                if db.is_seen(con, uuid):
+                    stats["seen"] += 1
+                    for p in wanted:
+                        db.add_match(con, p.id, uuid)
+                    continue
+                if not wanted:
+                    stats["out_of_area"] += 1
+                    continue
+                record = dict(
+                    uuid=uuid, date_modified=None, title=ad["title"], employer=ad["employer"],
+                    municipal=ad["location"].upper() or None,
+                    url=f"https://www.finn.no/{ad['code']}", application_url=None,
+                    description=LIMITED_INFO, source="finn",
+                )
+                if db.insert_ad(con, record):
+                    stats["new"] += 1
+                    new_ads.append(record)
+                for p in wanted:
+                    db.add_match(con, p.id, uuid)
+        db.set_meta(con, key, db.now_iso())
     if config.FINN_FETCH_PAGES and new_ads:
         stats["pages"] = fetch_descriptions(con, new_ads)
     log.info("Finn: %s", stats)
@@ -191,6 +203,7 @@ def purge(con) -> int:
     cur = con.execute(
         "UPDATE ads SET description=?, summary_fr=NULL WHERE source='finn' "
         "AND (description IS NOT ? OR summary_fr IS NOT NULL)", (LIMITED_INFO, LIMITED_INFO))
+    con.execute("UPDATE matches SET summary=NULL WHERE uuid LIKE 'finn:%' AND summary IS NOT NULL")
     con.commit()
     return cur.rowcount
 

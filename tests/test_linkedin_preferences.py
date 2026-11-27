@@ -76,7 +76,7 @@ def test_linkedin_off_by_default(con, monkeypatch):
 
 def test_linkedin_limited_preview_in_telegram():
     ad = dict(title="t", employer="e", municipal="OSLO", score=4, norwegian_required=0, source="linkedin",
-              summary_fr="s", url="https://www.linkedin.com/jobs/view/1/", description=linkedin.LIMITED_INFO)
+              summary="s", url="https://www.linkedin.com/jobs/view/1/", description=linkedin.LIMITED_INFO)
     assert "LinkedIn: limited preview" in telegram.format_offer(ad)
 
 

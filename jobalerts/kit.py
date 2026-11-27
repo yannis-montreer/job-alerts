@@ -9,23 +9,13 @@ import html
 import json
 import logging
 
-from . import config, db, preferences, telegram, triage
+from . import db, preferences, profiles, telegram, triage
 from .texts import language_name, t
 
 log = logging.getLogger(__name__)
 MAX_PER_RUN = 3      # each kit is one AI call (30-60 s); the catch-up task has 5 minutes
 MAX_ATTEMPTS = 3
 MAX_DESC_CHARS = 6000
-
-KIT_TABLE = """
-CREATE TABLE IF NOT EXISTS kits (
-    uuid TEXT PRIMARY KEY,
-    attempts INTEGER NOT NULL DEFAULT 0,
-    error TEXT,
-    content TEXT,
-    sent_at TEXT
-);
-"""
 
 KIT_SCHEMA = {
     "type": "object",
@@ -67,29 +57,27 @@ Application link: {application_url}
 """
 
 
-def ensure_table(con):
-    con.executescript(KIT_TABLE)
-
-
 def pending(con) -> list:
-    """Ads whose latest decision is keep and whose kit is not sent yet."""
-    ensure_table(con)
+    """The current profile's ads whose latest decision is keep and whose kit is not sent yet."""
+    pid = profiles.current().id
     return con.execute(
         """SELECT a.* FROM ads a
-           JOIN decisions d ON d.uuid = a.uuid
-           LEFT JOIN kits k ON k.uuid = a.uuid
-           WHERE d.id = (SELECT MAX(id) FROM decisions WHERE uuid = a.uuid) AND d.decision = 'keep'
+           JOIN decisions d ON d.uuid = a.uuid AND d.profile_id = ?
+           LEFT JOIN kits k ON k.uuid = a.uuid AND k.profile_id = d.profile_id
+           WHERE d.id = (SELECT MAX(id) FROM decisions WHERE uuid = a.uuid AND profile_id = d.profile_id)
+             AND d.decision = 'keep'
              AND (k.uuid IS NULL OR (k.sent_at IS NULL AND k.attempts < ?))
            ORDER BY d.id""",
-        (MAX_ATTEMPTS,),
+        (pid, MAX_ATTEMPTS),
     ).fetchall()
 
 
 def build_prompt(ad) -> str:
-    profile = config.PROFILE_PATH.read_text(encoding="utf-8") if config.PROFILE_PATH.exists() else "(no profile)"
+    p = profiles.current()
+    profile = p.profile_path.read_text(encoding="utf-8") if p.profile_path.exists() else "(no profile)"
     prefs = preferences.prompt_section()
     return KIT_PROMPT.format(
-        name=config.CANDIDATE_NAME or "the candidate", language=language_name(), profile=profile,
+        name=p.candidate_name, language=language_name(), profile=profile,
         preferences=("\n" + prefs + "\n") if prefs else "",
         title=ad["title"] or "", employer=ad["employer"] or "", place=ad["municipal"] or "",
         url=ad["url"] or "", application_url=ad["application_url"] or "",
@@ -123,41 +111,46 @@ def format_kit(ad, kit: dict) -> list[str]:
     return messages
 
 
-def _reply_to(con, uuid):
-    row = con.execute("SELECT message_id FROM sent_messages WHERE uuid=? ORDER BY message_id DESC", (uuid,)).fetchone()
+def _reply_to(con, bot_id, profile_id, uuid):
+    row = con.execute("SELECT message_id FROM messages WHERE bot_id=? AND profile_id=? AND uuid=? "
+                      "ORDER BY message_id DESC", (bot_id, profile_id, uuid)).fetchone()
     return {"message_id": row["message_id"], "allow_sending_without_reply": True} if row else None
 
 
 def send_kits(con) -> int:
-    """Prepare and send the pending kits. Returns how many were sent."""
+    """Prepare and send the current profile's pending kits, with its bot. Returns how many were sent."""
+    p = profiles.current()
     sent = 0
     for ad in pending(con)[:MAX_PER_RUN]:
         uuid = ad["uuid"]
-        con.execute("INSERT OR IGNORE INTO kits(uuid) VALUES(?)", (uuid,))
-        con.execute("UPDATE kits SET attempts = attempts + 1 WHERE uuid=?", (uuid,))
+        key = (p.id, uuid)
+        con.execute("INSERT OR IGNORE INTO kits(profile_id, uuid) VALUES(?, ?)", key)
+        con.execute("UPDATE kits SET attempts = attempts + 1 WHERE profile_id=? AND uuid=?", key)
         con.commit()
         try:
-            row = con.execute("SELECT content FROM kits WHERE uuid=?", (uuid,)).fetchone()
+            bot = profiles.bot_of(p)
+            row = con.execute("SELECT content FROM kits WHERE profile_id=? AND uuid=?", key).fetchone()
             kit = json.loads(row["content"]) if row["content"] else triage.ai_json(build_prompt(ad), KIT_SCHEMA)
-            con.execute("UPDATE kits SET content=?, error=NULL WHERE uuid=?", (json.dumps(kit, ensure_ascii=False), uuid))
+            con.execute("UPDATE kits SET content=?, error=NULL WHERE profile_id=? AND uuid=?",
+                        (json.dumps(kit, ensure_ascii=False), *key))
             con.commit()  # the AI answer is kept: a Telegram failure does not cost another AI call
-            reply = _reply_to(con, uuid)
+            reply = _reply_to(con, bot.id, p.id, uuid)
             for i, text in enumerate(format_kit(ad, kit)):
-                params = dict(chat_id=telegram.chat_id(), text=text, parse_mode="HTML",
+                params = dict(chat_id=telegram.chat_id(bot), text=text, parse_mode="HTML",
                               link_preview_options={"is_disabled": True})
                 if reply and i == 0:
                     params["reply_parameters"] = reply
-                telegram.api("sendMessage", **params)
-            con.execute("UPDATE kits SET sent_at=? WHERE uuid=?", (db.now_iso(), uuid))
+                telegram.api("sendMessage", bot=bot, **params)
+            con.execute("UPDATE kits SET sent_at=? WHERE profile_id=? AND uuid=?", (db.now_iso(), *key))
             con.commit()
             sent += 1
-            log.info("Application kit sent: %s", ad["title"])
+            log.info("Application kit sent (%s): %s", p.name or p.id, ad["title"])
         except Exception as e:
             err = str(e)[:500]
-            con.execute("UPDATE kits SET error=? WHERE uuid=?", (err, uuid))
+            con.execute("UPDATE kits SET error=? WHERE profile_id=? AND uuid=?", (err, *key))
             con.commit()
             log.error("Application kit failed for %s: %s", ad["title"], err)
-            attempts = con.execute("SELECT attempts FROM kits WHERE uuid=?", (uuid,)).fetchone()["attempts"]
+            attempts = con.execute("SELECT attempts FROM kits WHERE profile_id=? AND uuid=?", key).fetchone()["attempts"]
             if attempts >= MAX_ATTEMPTS:
                 try:
                     telegram.send_text(t("kit_failed", title=ad["title"] or "", err=err[:300]))

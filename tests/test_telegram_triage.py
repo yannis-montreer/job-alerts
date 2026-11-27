@@ -11,12 +11,12 @@ def test_texts_have_same_keys():
 def test_keyboard_marks_choice():
     kb = telegram.keyboard("abc", "reject")["inline_keyboard"][0]
     assert [b["text"] for b in kb] == ["Keep", "✔ Reject"]
-    assert [b["callback_data"] for b in kb] == ["k:abc", "r:abc"]
+    assert [b["callback_data"] for b in kb] == ["k:p1:abc", "r:p1:abc"]
 
 
 def test_format_offer_escapes_html():
     ad = dict(title="Sales <Lead> & co", employer="A&B", municipal="OSLO", score=4,
-              norwegian_required=1, source="finn", summary_fr="Line 1\nLine 2",
+              norwegian_required=1, source="finn", summary="Line 1\nLine 2",
               url='https://example.org/?a=1&b="x"', description=finn.LIMITED_INFO)
     text = telegram.format_offer(ad)
     assert "<b>Sales &lt;Lead&gt; &amp; co</b>" in text
@@ -28,10 +28,8 @@ def test_format_offer_escapes_html():
 
 
 def _sorted_ad(con, uuid, score, norwegian=0):
-    add_ad(con, uuid, title=f"Job {uuid}")
-    con.execute("UPDATE ads SET triaged_at='x', relevant=1, score=?, norwegian_required=?, summary_fr='s' WHERE uuid=?",
-                (score, norwegian, uuid))
-    con.commit()
+    add_ad(con, uuid, title=f"Job {uuid}", triaged_at="x", relevant=1, score=score,
+           norwegian_required=norwegian, summary="s")
 
 
 def test_send_offers_messages_digest_and_norwegian(con, monkeypatch):
@@ -50,7 +48,7 @@ def test_send_offers_messages_digest_and_norwegian(con, monkeypatch):
     digest = sent[2]["text"]
     assert "Also possible today (1)" in digest and "Job c" in digest
     assert "Job d" not in digest and "Job f" not in "".join(p["text"] for p in sent)
-    unsent = {r["uuid"] for r in con.execute("SELECT uuid FROM ads WHERE sent_at IS NULL")}
+    unsent = {r["uuid"] for r in con.execute("SELECT uuid FROM matches WHERE sent_at IS NULL")}
     assert unsent == {"d", "e", "f"}  # Norwegian-required and score 2 are never sent
     # nothing is sent twice
     sent.clear()
@@ -67,7 +65,7 @@ def test_send_offers_flag_mode_keeps_norwegian(con, monkeypatch):
 
 def test_collect_updates_stores_clicks_and_replies(con, monkeypatch):
     add_ad(con, "u1")
-    con.execute("INSERT INTO sent_messages(message_id, uuid, sent_at) VALUES(7, 'u1', 'x')")
+    con.execute("INSERT INTO messages(bot_id, message_id, profile_id, uuid, sent_at) VALUES('b1', 7, 'p1', 'u1', 'x')")
     con.commit()
     owner = {"id": 42}
     batches = [[
@@ -83,7 +81,8 @@ def test_collect_updates_stores_clicks_and_replies(con, monkeypatch):
     def fake_api(method, **params):
         if method == "getUpdates":
             return batches.pop(0)
-        edits.append((method, params["message_id"], params["reply_markup"]))
+        if method == "editMessageReplyMarkup":
+            edits.append((method, params["message_id"], params["reply_markup"]))
         return {}
 
     monkeypatch.setattr(telegram, "api", fake_api)
@@ -91,7 +90,7 @@ def test_collect_updates_stores_clicks_and_replies(con, monkeypatch):
     assert stats == dict(updates=3, decisions=1, notes=1, ignored=1)
     row = con.execute("SELECT decision, reason FROM decisions WHERE uuid='u1'").fetchone()
     assert (row["decision"], row["reason"]) == ("reject", "Too junior")
-    assert db.get_meta(con, "tg_offset") == "103"
+    assert db.get_meta(con, "tg_offset:b1") == "103"
     assert edits and edits[0][2]["inline_keyboard"][0][1]["text"] == "✔ Reject"
 
 
@@ -123,9 +122,9 @@ def test_triage_stores_results_and_retries_missing(con, tmp_path, monkeypatch):
         dict(id=1, relevant=True, score=9, summary="Good.\nVery.", norwegian_required=False, reason="fit"),
     ])
     assert triage.triage(con) == 1
-    a = con.execute("SELECT * FROM ads WHERE uuid='a'").fetchone()
-    assert (a["relevant"], a["score"], a["summary_fr"]) == (1, 5, "Good.\nVery.")  # score clamped to 5
-    b = con.execute("SELECT triaged_at FROM ads WHERE uuid='b'").fetchone()
+    a = con.execute("SELECT * FROM matches WHERE uuid='a'").fetchone()
+    assert (a["relevant"], a["score"], a["summary"]) == (1, 5, "Good.\nVery.")  # score clamped to 5
+    b = con.execute("SELECT triaged_at FROM matches WHERE uuid='b'").fetchone()
     assert b["triaged_at"] is None  # no result: retried at the next run
 
 

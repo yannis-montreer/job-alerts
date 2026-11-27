@@ -16,11 +16,18 @@ def empty() -> dict:
     return {"target_roles": [], "exclude": []}
 
 
+def path():
+    """preferences.json of the current profile (PATH for a setup without profiles)."""
+    from . import profiles
+    return profiles.current().preferences_path
+
+
 def load() -> dict:
-    if not PATH.exists():
+    p = path()
+    if not p.exists():
         return empty()
     try:
-        data = json.loads(PATH.read_text(encoding="utf-8"))
+        data = json.loads(p.read_text(encoding="utf-8"))
     except ValueError:
         return empty()
     return clean(data)
@@ -46,7 +53,9 @@ def clean(data: dict) -> dict:
 
 def save(data: dict) -> dict:
     data = clean(data)
-    PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    p = path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return data
 
 

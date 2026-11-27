@@ -18,7 +18,7 @@ import sys
 import traceback
 from datetime import datetime, timedelta, timezone
 
-from . import config, db, finn, kit, linkedin, listener, nav, telegram, triage
+from . import config, db, finn, kit, linkedin, listener, nav, profiles, telegram, triage
 from .texts import t
 
 LOGIN_WARN_DAYS = 5
@@ -69,50 +69,93 @@ def check_claude_login():
             db.set_meta(con, "login_warned", today)
 
 
+def collect_clicks(con):
+    """Clicks and replies of every bot, BEFORE sorting (they feed the examples). A bot that the
+    always-on dashboard listens to is left to it: two readers at once would make Telegram
+    refuse one of them (and the listener already sends the kits)."""
+    all_profiles = profiles.all_profiles()
+    for bot in profiles.all_bots():
+        owners = [p for p in all_profiles if p.bot == bot.id]
+        if not owners:
+            continue
+        if listener.active(con, bot.id):
+            logging.info("Telegram clicks (bot %s): handled by the always-on listener", bot.id)
+            continue
+        try:
+            telegram.collect_updates(con, bot=bot)
+        except Exception:
+            logging.error("Telegram clicks (bot %s) failed:\n%s", bot.id, scrub(traceback.format_exc()))
+            continue
+        for p in owners:
+            with profiles.use(p):
+                send_kits(con)
+
+
+def run_profile(con, p) -> int:
+    """Sort and send for one profile. Returns how many ads it analysed."""
+    with profiles.use(p):
+        analysed = triage.triage(con)
+        sent = telegram.send_offers(con)
+        if sent == 0:
+            telegram.send_text(t("none_today", n=analysed))
+        return analysed
+
+
 def run(collect_only: bool) -> int:
     con = db.connect()
 
-    # 1. Clicks and replies, BEFORE sorting (they feed the examples). When the always-on
-    #    dashboard listens to Telegram, it already stores them (and sends the kits): two
-    #    readers at once would make Telegram refuse one of them.
-    if listener.active(con):
-        logging.info("Telegram clicks: handled by the always-on listener")
-    else:
-        telegram.collect_updates(con)
-        send_kits(con)
+    # 1. Clicks and replies, for every bot.
+    collect_clicks(con)
     if collect_only:
         return 0
 
-    # 2. New NAV ads.
-    new_ads = []
+    # 2. New ads, fetched once for all profiles; each ad is handed to the profiles it may suit.
     if config.SOURCE_NAV:
         since = nav.compute_since(con)
         logging.info("NAV window since %s", since.isoformat())
-        new_ads, _ = nav.fetch_new_ads(con, since)
+        nav.fetch_new_ads(con, since)
         db.set_meta(con, "nav_last_success", db.now_iso())
 
     # 2b. Alert-email sources: a failure here must not block the other sources or sorting.
     source_errors = []
     for name, module in (("Finn", finn), ("LinkedIn", linkedin)):
         try:
-            ads, _ = module.fetch_new_ads(con)
-            new_ads += ads
+            module.fetch_new_ads(con)
         except Exception as e:
             source_errors.append((name, scrub(str(e))))
             logging.error("%s failed:\n%s", name, scrub(traceback.format_exc()))
 
-    # 3. Sorting: a single AI call (also picks up ads left unsorted).
-    triage.triage(con)
+    # 3-4. Per profile: one AI call to sort its new ads, then send them with its bot.
+    #      A profile that fails (missing profile text, bot not set up...) does not stop the others.
+    failed = []
+    for p in profiles.all_profiles():
+        missing = profiles.issue(p)
+        if missing:  # a profile being set up in the dashboard: not an error
+            logging.info("Profile %s skipped: %s", p.name or p.id, missing)
+            continue
+        try:
+            run_profile(con, p)
+        except Exception as e:
+            failed.append(p)
+            logging.error("Profile %s failed:\n%s", p.name or p.id, scrub(traceback.format_exc()))
+            try:
+                with profiles.use(p):
+                    telegram.send_text(t("run_failed", mode=p.name or p.id, err=scrub(str(e))[:600]))
+            except Exception:
+                pass
 
-    # 4. Send relevant ads (also picks up ads left unsent).
-    sent = telegram.send_offers(con)
-    if sent == 0:
-        telegram.send_text(t("none_today", n=len(new_ads)))
-
-    for name, err in source_errors:
-        telegram.send_text(t("source_failed", source=name, err=err[:400]))
+    # Source errors and the login warning: once per bot.
+    ready = [p for p in profiles.all_profiles() if not profiles.issue(p)]
+    for bot_id in dict.fromkeys(p.bot for p in ready):
+        owner = next(p for p in ready if p.bot == bot_id)
+        try:
+            with profiles.use(owner):
+                for name, err in source_errors:
+                    telegram.send_text(t("source_failed", source=name, err=err[:400]))
+        except Exception:
+            logging.error("Could not send the source errors (bot %s)", bot_id)
     check_claude_login()
-    return 0
+    return 1 if failed else 0
 
 
 def send_kits(con):
