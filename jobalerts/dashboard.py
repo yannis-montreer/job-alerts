@@ -40,7 +40,7 @@ from dotenv import dotenv_values, load_dotenv
 from flask import Flask, abort, jsonify, redirect, request, send_file, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from . import config, finn, linkedin, preferences, telegram, texts, triage
+from . import config, db, finn, linkedin, listener, preferences, telegram, texts, triage
 
 ROOT = config.ROOT
 ENV_PATH = ROOT / ".env"
@@ -390,6 +390,17 @@ def save_settings():
     return jsonify(ok=True, saved=sorted(updates))
 
 
+def _listener_active() -> bool:
+    try:
+        con = db.connect()
+        try:
+            return listener.active(con)
+        finally:
+            con.close()
+    except Exception:
+        return False
+
+
 @app.get("/api/status")
 def status():
     env = env_values()
@@ -405,7 +416,8 @@ def status():
         ai=dict(provider=provider, gemini_key=bool(env.get("GEMINI_API_KEY")),
                 gemini_model=env.get("GEMINI_MODEL") or "gemini-flash-latest"),
         claude=claude_status(),
-        telegram=dict(token=bool(env.get("TELEGRAM_BOT_TOKEN")), chat_id=bool(env.get("TELEGRAM_CHAT_ID"))),
+        telegram=dict(token=bool(env.get("TELEGRAM_BOT_TOKEN")), chat_id=bool(env.get("TELEGRAM_CHAT_ID")),
+                      listener=_listener_active()),
         gmail=dict(configured=bool(env.get("GMAIL_ADDRESS") and env.get("GMAIL_APP_PASSWORD"))),
         sources=dict(nav=_flag(env, "SOURCE_NAV", True), finn=_flag(env, "SOURCE_FINN", True),
                      linkedin=_flag(env, "SOURCE_LINKEDIN", False)),
@@ -842,6 +854,11 @@ def main(argv=None) -> int:
             print(f"{datetime.now():%Y-%m-%d %H:%M} port {PORT} already in use: not starting")
             return 1
         print(f"{datetime.now():%Y-%m-%d %H:%M} dashboard service on http://127.0.0.1:{PORT}/")
+        import logging
+        logging.basicConfig(level=logging.INFO, stream=sys.stdout,
+                            format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+        logging.getLogger("werkzeug").setLevel(logging.WARNING)  # no line per request
+        listener.Listener().start()  # Telegram taps, acknowledged within seconds
     else:
         if not args.no_browser and _is_dashboard(service_port()):  # the always-on dashboard is running
             webbrowser.open(f"http://127.0.0.1:{service_port()}/")

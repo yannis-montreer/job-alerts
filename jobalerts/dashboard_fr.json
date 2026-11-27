@@ -267,7 +267,6 @@
   "Log out": "Se déconnecter",
   "Use this dashboard from your phone through Tailscale, and add it to your home screen like an app.": "Utilise ce tableau de bord depuis ton téléphone via Tailscale, et ajoute-le à ton écran d'accueil comme une appli.",
   "1. Always-on dashboard": "1. Tableau de bord toujours actif",
-  "The phone needs the dashboard to run all the time on this computer: a scheduled task starts it in the background when you log on to Windows (no window).": "Le téléphone a besoin que le tableau de bord tourne en permanence sur cet ordinateur : une tâche planifiée le lance en arrière-plan à l'ouverture de ta session Windows (sans fenêtre).",
   "Create and start it": "Le créer et le lancer",
   "2. Tailscale address and password": "2. Adresse Tailscale et mot de passe",
   "This computer's name on your Tailscale network. Only your own Tailscale devices can open it.": "Le nom de cet ordinateur sur ton réseau Tailscale. Seuls tes propres appareils Tailscale peuvent l'ouvrir.",
@@ -297,5 +296,7 @@
   "Created and started. It now starts with your Windows session.": "Créé et lancé. Il démarre maintenant avec ta session Windows.",
   "Tailscale Serve is on: {url}": "Tailscale Serve est actif : {url}",
   "Not set up (optional)": "Non configuré (facultatif)",
-  "my-pc.tail1234.ts.net": "my-pc.tail1234.ts.net"
+  "my-pc.tail1234.ts.net": "my-pc.tail1234.ts.net",
+  "The phone needs the dashboard to run all the time on this computer: a scheduled task starts it in the background when you log on to Windows (no window). It also listens to Telegram all day, so each Keep / Reject tap is saved within seconds and the application kit follows right away.": "Le téléphone a besoin que le tableau de bord tourne en permanence sur cet ordinateur : une tâche planifiée le lance en arrière-plan à l'ouverture de ta session Windows (sans fenêtre). Il écoute aussi Telegram toute la journée : chaque clic Garder / Rejeter est enregistré en quelques secondes et le kit de candidature suit aussitôt.",
+  "Listening: taps are saved within seconds": "À l'écoute : les clics sont enregistrés en quelques secondes"
 }

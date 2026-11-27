@@ -34,6 +34,12 @@ own profile with Claude or Gemini, and sends the relevant ones to you on Telegra
 in the morning (07:40-10:30) so the ✔ appears on the button you chose. A click outside that
 window is not lost: Telegram keeps it 24 h and the next morning run stores it.
 
+**Tap acknowledgement.** Telegram drops a button tap after about two minutes if the bot does not
+answer it, so a check every 10 minutes loses taps. The **always-on dashboard** (see *Phone access*
+below) therefore also listens to Telegram all day: each tap is saved and answered within seconds,
+the ✔ appears at once, and the scheduled click collection then leaves Telegram to it. Without the
+always-on dashboard, only written replies are reliable; set it up even if you don't use a phone.
+
 When you tap **Keep**, the next click collection (within 10 minutes in the morning window, or the
 next morning) sends an **application kit** as a reply to the ad: deadline, contact, how to apply,
 key requirements, gaps to prepare for, points to highlight, and a draft cover letter to copy and
@@ -99,7 +105,7 @@ same setup by hand.
 ### Optional: the dashboard on your phone (Tailscale)
 If [Tailscale](https://tailscale.com/) runs on this computer and on your phone, the dashboard's
 **Phone access** page sets it up in three clicks:
-1. **Create and start it:** a scheduled task (`<Prefix>-Dashboard`, created by
+1. **Create and start it** (also needed for reliable Telegram taps): a scheduled task (`<Prefix>-Dashboard`, created by
    `setup_dashboard_task.ps1`) runs the dashboard in the background from logon, on
    `127.0.0.1:8787` (`DASHBOARD_PORT`).
 2. **Tailscale address and password:** your computer's Tailscale name (filled in for you) and a
@@ -230,6 +236,7 @@ Run the morning task by hand: `Start-ScheduledTask JobAlerts-Morning`.
 | `setup_tasks.ps1` | Creates the scheduled tasks |
 | `setup_dashboard_task.ps1` | Always-on dashboard task, for phone access |
 | `jobalerts/kit.py` | Application kit sent after a Keep click |
+| `jobalerts/listener.py` | Always-on Telegram listener (runs in the always-on dashboard) |
 | `jobalerts/static/` | App icons for the phone |
 | `tests/` | Unit tests (no network, no secrets) |
 | `.github/workflows/ci.yml` | GitHub Actions: runs the tests on each push and pull request |

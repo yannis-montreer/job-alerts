@@ -18,7 +18,7 @@ import sys
 import traceback
 from datetime import datetime, timedelta, timezone
 
-from . import config, db, finn, kit, linkedin, nav, telegram, triage
+from . import config, db, finn, kit, linkedin, listener, nav, telegram, triage
 from .texts import t
 
 LOGIN_WARN_DAYS = 5
@@ -72,9 +72,14 @@ def check_claude_login():
 def run(collect_only: bool) -> int:
     con = db.connect()
 
-    # 1. Clicks and replies from the last 24 h, BEFORE sorting (they feed the examples).
-    telegram.collect_updates(con)
-    send_kits(con)
+    # 1. Clicks and replies, BEFORE sorting (they feed the examples). When the always-on
+    #    dashboard listens to Telegram, it already stores them (and sends the kits): two
+    #    readers at once would make Telegram refuse one of them.
+    if listener.active(con):
+        logging.info("Telegram clicks: handled by the always-on listener")
+    else:
+        telegram.collect_updates(con)
+        send_kits(con)
     if collect_only:
         return 0
 

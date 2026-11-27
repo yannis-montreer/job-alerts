@@ -53,7 +53,7 @@ def now_iso() -> str:
 
 def connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(DB_PATH)
+    con = sqlite3.connect(DB_PATH, timeout=30)  # the listener and the runs share it
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
     return con

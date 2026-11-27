@@ -28,11 +28,11 @@ def _creds():
     return token, chat
 
 
-def api(method: str, **params):
+def api(method: str, _timeout: int = TIMEOUT, **params):
     token, _ = _creds()
     if not token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN missing in .env")
-    r = requests.post(API.format(token=token, method=method), json=params, timeout=TIMEOUT)
+    r = requests.post(API.format(token=token, method=method), json=params, timeout=_timeout)
     try:
         data = r.json()
     except ValueError:
@@ -157,16 +157,28 @@ def _apply_notes(con):
     con.commit()
 
 
-def collect_updates(con) -> dict:
-    """Read updates since the last offset and store decisions and notes."""
+def _answer(cq: dict, text: str = ""):
+    """Acknowledge a button tap at once: Telegram drops unanswered taps after a few minutes."""
+    try:
+        api("answerCallbackQuery", callback_query_id=cq["id"], text=text)
+    except Exception as e:  # too old, or already answered: harmless
+        log.info("Tap not acknowledged: %s", e)
+
+
+def collect_updates(con, wait: int = 0) -> dict:
+    """Read updates since the last offset and store decisions and notes.
+
+    wait > 0: long polling (the always-on listener): the first request waits up to `wait`
+    seconds for something to arrive."""
     stats = dict(updates=0, decisions=0, notes=0, ignored=0)
     offset = int(db.get_meta(con, "tg_offset", "0"))
     to_ack = []  # (chat_id, message_id, uuid, decision)
     while True:
         # allowed_updates is remembered by Telegram: always include callback_query,
         # otherwise button clicks are dropped.
-        updates = api("getUpdates", offset=offset or None, timeout=0, limit=100,
+        updates = api("getUpdates", _timeout=wait + 20, offset=offset or None, timeout=wait, limit=100,
                       allowed_updates=["message", "callback_query"])
+        wait = 0
         if not updates:
             break
         # Telegram numbers updates one by one: a jump means someone else read them first.
@@ -179,6 +191,8 @@ def collect_updates(con) -> dict:
             stats["updates"] += 1
             offset = max(offset, u["update_id"] + 1)
             if not _is_owner(u):
+                if "callback_query" in u:
+                    _answer(u["callback_query"])
                 stats["ignored"] += 1
                 log.warning("Update %s ignored: sender not allowed", u["update_id"])
                 continue
@@ -192,6 +206,9 @@ def collect_updates(con) -> dict:
                         (uuid, decision, db.now_iso(), u["update_id"]))
                     stats["decisions"] += cur.rowcount
                     to_ack.append((cq["message"]["chat"]["id"], cq["message"]["message_id"], uuid, decision))
+                    _answer(cq, "✔ " + t("keep" if decision == "keep" else "reject"))
+                else:
+                    _answer(cq, "✔")
             else:
                 msg = u.get("message") or {}
                 text = (msg.get("text") or "").strip()
@@ -220,7 +237,7 @@ def collect_updates(con) -> dict:
             api("editMessageReplyMarkup", chat_id=chat, message_id=mid, reply_markup=keyboard(uuid, decision))
         except RuntimeError as e:  # e.g. "message is not modified": harmless
             log.info("Button update skipped: %s", e)
-    log.info("Telegram: %s", stats)
+    (log.info if stats["updates"] or not wait else log.debug)("Telegram: %s", stats)
     return stats
 
 

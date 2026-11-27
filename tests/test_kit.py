@@ -98,3 +98,41 @@ def test_missing_update_numbers_send_a_warning(con, monkeypatch):
 def test_run_module_imports():
     import importlib
     importlib.import_module("jobalerts.run")
+
+
+def test_taps_are_acknowledged_at_once(con, monkeypatch):
+    from jobalerts import db
+    add_ad(con, "u1")
+    owner = {"id": 42}
+    batches = [[{"update_id": 5, "callback_query": {"id": "cb1", "from": owner, "data": "k:u1",
+                                                     "message": {"message_id": 7, "chat": owner}}},
+                {"update_id": 6, "callback_query": {"id": "cb2", "from": owner, "data": "test:A",
+                                                     "message": {"message_id": 8, "chat": owner}}}], []]
+    calls = []
+
+    def fake_api(method, _timeout=30, **params):
+        calls.append((method, params, _timeout))
+        return batches.pop(0) if method == "getUpdates" else {}
+    monkeypatch.setattr(telegram, "api", fake_api)
+    telegram.collect_updates(con, wait=50)
+    gets = [c for c in calls if c[0] == "getUpdates"]
+    assert gets[0][1]["timeout"] == 50 and gets[0][2] == 70 and gets[1][1]["timeout"] == 0  # only the first waits
+    answers = {c[1]["callback_query_id"]: c[1]["text"] for c in calls if c[0] == "answerCallbackQuery"}
+    assert answers == {"cb1": "✔ Keep", "cb2": "✔"}
+
+
+def test_runs_leave_telegram_to_an_active_listener(con, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from jobalerts import db, listener, run
+    assert not listener.active(con)
+    db.set_meta(con, listener.HEARTBEAT, db.now_iso())
+    assert listener.active(con)
+    old = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(timespec="seconds")
+    db.set_meta(con, listener.HEARTBEAT, old)
+    assert not listener.active(con)
+
+    db.set_meta(con, listener.HEARTBEAT, db.now_iso())
+    collected = []
+    monkeypatch.setattr(run.db, "connect", lambda: con)
+    monkeypatch.setattr(telegram, "collect_updates", lambda c, wait=0: collected.append(1))
+    assert run.run(collect_only=True) == 0 and collected == []

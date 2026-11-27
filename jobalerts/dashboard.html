@@ -426,7 +426,7 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
   </div>
   <div class="card">
     <h3>1. Always-on dashboard</h3>
-    <p class="hint">The phone needs the dashboard to run all the time on this computer: a scheduled task starts it in the background when you log on to Windows (no window).</p>
+    <p class="hint">The phone needs the dashboard to run all the time on this computer: a scheduled task starts it in the background when you log on to Windows (no window). It also listens to Telegram all day, so each Keep / Reject tap is saved within seconds and the application kit follows right away.</p>
     <div class="row"><button class="primary" onclick="startService()">Create and start it</button></div>
     <div class="msg" id="serviceMsg"></div>
   </div>
@@ -799,7 +799,7 @@ async function refreshStatus() {
   const claudeLine = !c.installed ? ["bad", tr("Not installed")] : !c.logged_in ? ["bad", tr("Installed, not logged in")] :
     (c.days_left != null && c.days_left < 5) ? ["warn", tr("Logged in, expires in {n} day(s)", { n: c.days_left })] :
     ["ok", c.days_left != null ? tr("Logged in, expires in {n} days", { n: c.days_left }) : tr("Logged in")];
-  const tg = s.telegram.token && s.telegram.chat_id ? ["ok", tr("Token and chat id saved (use Test to check)")] :
+  const tg = s.telegram.token && s.telegram.chat_id ? ["ok", (s.telegram.listener ? tr("Listening: taps are saved within seconds") : tr("Token and chat id saved (use Test to check)"))] :
     s.telegram.token ? ["warn", tr("Token saved, chat id missing")] : ["bad", tr("Not set up")];
   const prof = !s.profile.exists ? ["bad", tr("Missing")] : s.profile.is_template ? ["warn", tr("Still the template")] : ["ok", tr("Filled in")];
   const full = s.tasks.filter(t => t.kind === "full run"), coll = s.tasks.filter(t => t.kind === "catch-up");
