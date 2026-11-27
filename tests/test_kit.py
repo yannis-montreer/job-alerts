@@ -93,3 +93,8 @@ def test_missing_update_numbers_send_a_warning(con, monkeypatch):
     monkeypatch.setattr(telegram, "api", fake_api)
     stats = telegram.collect_updates(con)
     assert stats["lost"] == 3 and "3 Telegram click(s)" in texts[0]
+
+
+def test_run_module_imports():
+    import importlib
+    importlib.import_module("jobalerts.run")

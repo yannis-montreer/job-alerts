@@ -115,8 +115,7 @@ def send_kits(con):
     try:
         kit.send_kits(con)
     except Exception:
-        logging.error("Application kits failed:
-%s", scrub(traceback.format_exc()))
+        logging.error("Application kits failed:\n%s", scrub(traceback.format_exc()))
 
 
 def main(argv=None) -> int:
