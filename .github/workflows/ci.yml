@@ -28,9 +28,11 @@ jobs:
         run: python -m compileall -q jobalerts tests
       - name: Unit tests
         run: python -m pytest -q
-      - name: Check the task script parses
+      - name: Check the task scripts parse
         shell: pwsh
         run: |
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile("$PWD\setup_tasks.ps1", [ref]$null, [ref]$errors) | Out-Null
-          if ($errors) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+          foreach ($f in "setup_tasks.ps1", "setup_dashboard_task.ps1") {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile("$PWD\$f", [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) { $errors | ForEach-Object { Write-Error "$f : $($_.Message)" }; exit 1 }
+          }

@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Job Alerts</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#2f6fdb">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <style>
 :root {
   --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6677; --line: #e2e5eb;
@@ -25,6 +29,7 @@ nav { width: 210px; flex: none; padding: 20px 12px; z-index: 5; border-right: 1p
 nav h1 { font-size: 17px; margin: 0 8px 16px; }
 nav a { display: block; padding: 7px 10px; border-radius: 6px; color: var(--text); text-decoration: none; }
 nav a:hover, nav a.active { background: var(--code); }
+nav a[hidden] { display: none; }
 main { flex: 1; padding: 24px; max-width: 980px; min-width: 0; }
 section { display: none; }
 section.active { display: block; }
@@ -89,6 +94,18 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
   main { padding: 16px; }
   .grid2 { grid-template-columns: 1fr; }
   table { display: block; overflow-x: auto; }
+  nav a { padding: 5px 9px; font-size: 14px; }
+  #rolesTable, #excludeTable { display: block; overflow: visible; }
+  #rolesTable tbody, #excludeTable tbody { display: block; }
+  #rolesTable tr, #excludeTable tr { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  #rolesTable td, #excludeTable td { border: 0; padding: 0; }
+  #rolesTable td:first-child, #excludeTable td:first-child { flex: 1 1 100%; }
+  #rolesTable td[style], #excludeTable td[style] { width: auto !important; }
+  #rolesTable select { width: auto; padding: 6px 8px; }
+  #rolesTable button, #excludeTable button { padding: 6px 8px; }
+  .checks .what { min-width: 0; flex: 0 0 34%; }
+  .checks li > span:nth-child(3) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  input, select, textarea { font-size: 16px; } /* no zoom-in on iPhone */
 }
 </style>
 </head>
@@ -113,6 +130,8 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
   <a href="#schedule">Schedule</a>
   <a href="#run">Run now</a>
   <a href="#history">History</a>
+  <a href="#phone">Phone access</a>
+  <a href="/logout" id="logoutLink" hidden>Log out</a>
 </nav>
 <main>
 
@@ -398,12 +417,55 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
   <div class="card"><div id="historyTable">Loading…</div></div>
 </section>
 
+<section id="phone">
+  <h2>Phone access</h2>
+  <p class="lead">Use this dashboard from your phone through Tailscale, and add it to your home screen like an app.</p>
+  <div class="card">
+    <h3>Status</h3>
+    <ul class="checks" id="remoteChecks"><li>Loading…</li></ul>
+  </div>
+  <div class="card">
+    <h3>1. Always-on dashboard</h3>
+    <p class="hint">The phone needs the dashboard to run all the time on this computer: a scheduled task starts it in the background when you log on to Windows (no window).</p>
+    <div class="row"><button class="primary" onclick="startService()">Create and start it</button></div>
+    <div class="msg" id="serviceMsg"></div>
+  </div>
+  <div class="card">
+    <h3>2. Tailscale address and password</h3>
+    <p class="hint">This computer's name on your Tailscale network. Only your own Tailscale devices can open it.</p>
+    <label for="remoteHost">Tailscale address</label>
+    <input type="text" id="remoteHost" autocomplete="off" placeholder="my-pc.tail1234.ts.net">
+    <p class="hint">The password is asked once on the phone, then remembered for 30 days. At least 8 characters. Changing it logs every phone out.</p>
+    <div class="grid2">
+      <div><label for="remotePw">New password <span class="hint" id="remotePwState"></span></label><input type="password" id="remotePw" autocomplete="new-password" placeholder="leave empty to keep the current value"></div>
+      <div><label for="remotePw2">Repeat the password</label><input type="password" id="remotePw2" autocomplete="new-password"></div>
+    </div>
+    <div class="row"><button class="primary" onclick="saveRemote()">Save</button></div>
+    <div class="msg" id="remoteMsg"></div>
+  </div>
+  <div class="card">
+    <h3>3. Share it on Tailscale</h3>
+    <p class="hint">Runs Tailscale Serve for the dashboard's port: private to your Tailscale devices. Never put the dashboard on Tailscale Funnel, which makes a service public on the internet.</p>
+    <div class="row"><button class="primary" onclick="startServe()">Turn on Tailscale Serve</button></div>
+    <div class="msg" id="serveMsg"></div>
+  </div>
+  <div class="card">
+    <h3>4. On the phone</h3>
+    <ol class="steps">
+      <li>Open the Tailscale app on the phone and check it is connected.</li>
+      <li>In the phone's browser, open <b id="remoteUrl" class="notr">…</b> and log in with the password.</li>
+      <li>Add it to the home screen. Android (Chrome): menu ⋮, then <b>Add to Home screen</b> or <b>Install app</b>. iPhone (Safari): Share, then <b>Add to Home Screen</b>.</li>
+    </ol>
+  </div>
+</section>
+
 </main>
 </div>
 <div id="toast"></div>
 
 <script>
 const TOKEN = "{{TOKEN}}";
+const REMOTE = {{REMOTE}};
 const FR = {{FR}};
 let UI = "{{UI_LANG}}";
 let settings = null, statusData = null, runTimer = null;
@@ -502,6 +564,8 @@ function show() {
   if (id === "history") loadHistory();
   if (id === "prefs") loadPrefs();
   if (id === "run") pollRun();
+  if (id === "phone") loadRemote();
+  if (window.innerWidth < 760) window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", show);
 
@@ -752,7 +816,9 @@ async function refreshStatus() {
       : li(claudeLine[0], tr("AI: Claude"), claudeLine[1], "ai")) +
     li(s.sources.nav || s.sources.finn || s.sources.linkedin ? "ok" : "bad", tr("Sources"), sourcesLine(s), "sources") +
     li(sched[0], tr("Schedule"), sched[1], "schedule") +
-    li("ok", tr("Language"), esc(tr("Telegram alerts in {tg}, dashboard in {ui} (🌐 button at the top left)", { tg: langName(alerts), ui: langName(UI) })));
+    li("ok", tr("Language"), esc(tr("Telegram alerts in {tg}, dashboard in {ui} (🌐 button at the top left)", { tg: langName(alerts), ui: langName(UI) }))) +
+    li(s.remote.host && s.remote.password_set && s.remote.service ? "ok" : "off", tr("Phone access"),
+       s.remote.host && s.remote.password_set && s.remote.service ? esc(s.remote.url) : tr("Not set up (optional)"), "phone");
   const d = s.db || {};
   const statsHtml = [["ads", "ads seen"], ["sorted", "sorted"], ["relevant", "relevant"], ["sent", "sent"], ["kept", "kept"], ["rejected", "rejected"]]
     .map(([k, l]) => `<div class="stat"><b>${d[k] ?? 0}</b><span>${tr(l)}</span></div>`).join("");
@@ -770,6 +836,48 @@ async function refreshStatus() {
       `<td><button onclick="removeTask('${esc(t.name)}')">${tr("Remove")}</button></td></tr>`).join("") + "</table>";
   if (full.length) $("tMorning").value = full[0].start;
   if (coll.length) $("tCatch").value = coll[0].start;
+}
+
+// ---------- phone access ----------
+let remoteData = null;
+async function loadRemote() {
+  try { remoteData = await api("/api/remote"); } catch (e) { $("remoteChecks").innerHTML = li("bad", tr("Phone access"), esc(e.message)); return; }
+  const r = remoteData;
+  if (!$("remoteHost").value) $("remoteHost").value = r.host || r.suggested_host || "";
+  $("remotePwState").textContent = r.password_set ? tr("(saved)") : tr("(not set)");
+  $("remoteUrl").textContent = r.url || tr("(save the Tailscale address first)");
+  $("remoteChecks").innerHTML =
+    li(r.service ? "ok" : "bad", tr("Always-on dashboard"), r.service ? tr("Running on port {port}", { port: r.port }) : tr("Not running")) +
+    li(r.host ? "ok" : "bad", tr("Tailscale address"), r.host ? esc(r.host) : tr("Not set")) +
+    li(r.password_set ? "ok" : "bad", tr("Password"), r.password_set ? tr("Set") : tr("Not set"));
+}
+async function saveRemote() {
+  const btn = event.target;
+  await busy(btn, async () => {
+    try {
+      if ($("remotePw").value !== $("remotePw2").value) throw new Error(tr("The two passwords are different."));
+      const body = { host: $("remoteHost").value };
+      if ($("remotePw").value) body.password = $("remotePw").value;
+      await api("/api/remote", body);
+      $("remotePw").value = $("remotePw2").value = "";
+      msg("remoteMsg", "ok", tr("Saved."));
+      loadRemote();
+    } catch (e) { msg("remoteMsg", "bad", e.message); }
+  });
+}
+async function startService() {
+  const btn = event.target;
+  await busy(btn, async () => {
+    try { await api("/api/remote/service", {}); msg("serviceMsg", "ok", tr("Created and started. It now starts with your Windows session.")); setTimeout(loadRemote, 3000); }
+    catch (e) { msg("serviceMsg", "bad", e.message); }
+  });
+}
+async function startServe() {
+  const btn = event.target;
+  await busy(btn, async () => {
+    try { const r = await api("/api/remote/serve", {}); msg("serveMsg", "ok", tr("Tailscale Serve is on: {url}", { url: r.url })); loadRemote(); }
+    catch (e) { msg("serveMsg", "bad", e.message); }
+  });
 }
 
 // ---------- schedule ----------
@@ -825,6 +933,8 @@ async function loadHistory() {
 }
 
 $("profile").addEventListener("input", () => { profileEdited = true; });
+$("logoutLink").hidden = !REMOTE;
+if (REMOTE && "serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 translatePage();
 loadSettings().catch(e => toast(e.message));
 loadProfile().catch(e => toast(e.message));

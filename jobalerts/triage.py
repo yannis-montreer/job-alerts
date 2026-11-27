@@ -112,12 +112,17 @@ def build_prompt(con, ads) -> str:
 
 
 def call_claude(prompt: str) -> list[dict]:
+    return claude_json(prompt, SCHEMA)["results"]
+
+
+def claude_json(prompt: str, schema: dict) -> dict:
+    """One claude -p call that returns an object matching the JSON schema."""
     if not CLAUDE_EXE.exists():
         raise RuntimeError(f"claude.exe not found: {CLAUDE_EXE}")
     cmd = [
         str(CLAUDE_EXE), "-p",
         "--output-format", "json",
-        "--json-schema", json.dumps(SCHEMA),
+        "--json-schema", json.dumps(schema),
         "--tools", "",
         "--no-session-persistence",
         "--disable-slash-commands",
@@ -138,7 +143,7 @@ def call_claude(prompt: str) -> list[dict]:
     structured = data.get("structured_output")
     if structured is None:  # fallback: JSON in the text
         structured = json.loads(data["result"])
-    return structured["results"]
+    return structured
 
 
 # ---------- Gemini ----------
@@ -176,12 +181,17 @@ def _gemini_text(data: dict) -> str:
 
 
 def call_gemini(prompt: str) -> list[dict]:
+    return gemini_json(prompt, SCHEMA)["results"]
+
+
+def gemini_json(prompt: str, schema: dict) -> dict:
+    """One Gemini call that returns an object matching the JSON schema."""
     url = f"{GEMINI_BASE}/models/{config.GEMINI_MODEL}:generateContent"
     contents = [{"role": "user", "parts": [{"text": prompt}]}]
     # Current REST format, then the older field names if this API version rejects it.
     configs = [
-        {"responseFormat": {"text": {"mimeType": "APPLICATION_JSON", "schema": SCHEMA}}},
-        {"responseMimeType": "application/json", "responseJsonSchema": SCHEMA},
+        {"responseFormat": {"text": {"mimeType": "APPLICATION_JSON", "schema": schema}}},
+        {"responseMimeType": "application/json", "responseJsonSchema": schema},
     ]
     for i, gen in enumerate(configs):
         r = requests.post(url, headers=_gemini_headers(), json={"contents": contents, "generationConfig": gen},
@@ -193,7 +203,7 @@ def call_gemini(prompt: str) -> list[dict]:
             raise _gemini_error(r)
         break
     try:
-        return json.loads(_gemini_text(r.json()))["results"]
+        return json.loads(_gemini_text(r.json()))
     except (ValueError, KeyError, TypeError) as e:
         raise RuntimeError(f"Gemini answer is not the expected JSON: {e}") from None
 
@@ -213,6 +223,15 @@ def call_ai(prompt: str) -> list[dict]:
     if config.AI_PROVIDER != "claude":
         raise RuntimeError(f"Unknown AI_PROVIDER: {config.AI_PROVIDER} (use claude or gemini)")
     return call_claude(prompt)
+
+
+def ai_json(prompt: str, schema: dict) -> dict:
+    """Any other structured AI call (e.g. the application kit), with the configured provider."""
+    if config.AI_PROVIDER == "gemini":
+        return gemini_json(prompt, schema)
+    if config.AI_PROVIDER != "claude":
+        raise RuntimeError(f"Unknown AI_PROVIDER: {config.AI_PROVIDER} (use claude or gemini)")
+    return claude_json(prompt, schema)
 
 
 def triage(con) -> int:

@@ -18,7 +18,7 @@ import sys
 import traceback
 from datetime import datetime, timedelta, timezone
 
-from . import config, db, finn, linkedin, nav, telegram, triage
+from . import config, db, finn, kit, linkedin, nav, telegram, triage
 from .texts import t
 
 LOGIN_WARN_DAYS = 5
@@ -74,6 +74,7 @@ def run(collect_only: bool) -> int:
 
     # 1. Clicks and replies from the last 24 h, BEFORE sorting (they feed the examples).
     telegram.collect_updates(con)
+    send_kits(con)
     if collect_only:
         return 0
 
@@ -107,6 +108,15 @@ def run(collect_only: bool) -> int:
         telegram.send_text(t("source_failed", source=name, err=err[:400]))
     check_claude_login()
     return 0
+
+
+def send_kits(con):
+    """Application kits for new Keep clicks. A failure here never stops the run."""
+    try:
+        kit.send_kits(con)
+    except Exception:
+        logging.error("Application kits failed:
+%s", scrub(traceback.format_exc()))
 
 
 def main(argv=None) -> int:

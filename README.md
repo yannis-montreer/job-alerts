@@ -34,6 +34,15 @@ own profile with Claude or Gemini, and sends the relevant ones to you on Telegra
 in the morning (07:40-10:30) so the ✔ appears on the button you chose. A click outside that
 window is not lost: Telegram keeps it 24 h and the next morning run stores it.
 
+When you tap **Keep**, the next click collection (within 10 minutes in the morning window, or the
+next morning) sends an **application kit** as a reply to the ad: deadline, contact, how to apply,
+key requirements, gaps to prepare for, points to highlight, and a draft cover letter to copy and
+adapt. It is one extra AI call per kept ad, written only from the ad and your profile.
+
+If Telegram clicks or messages ever go missing (another program using the same bot token, or
+clicks older than 24 h while the computer was off), the tool notices the gap in Telegram's
+numbering and warns you on Telegram.
+
 To give a reason, **reply** to an ad message in Telegram (e.g. "too junior", "call center,
 not interested"). Replies are used as examples even without a click.
 
@@ -81,10 +90,29 @@ that walks you through every step below, with a test button for each part:
   (only with Finn's written permission) and deletion of the stored descriptions.
 - **Schedule:** create, update or remove the scheduled tasks.
 - **Run now** and **History:** run by hand, see the log, see the ads sent and your decisions.
+- **Phone access:** use the dashboard from your phone through Tailscale (see below).
 
 The dashboard only listens on this computer (`127.0.0.1`) and stops when you close its window.
 Secrets you type are saved to `.env` and never shown again. Steps 3 to 8 below describe the
 same setup by hand.
+
+### Optional: the dashboard on your phone (Tailscale)
+If [Tailscale](https://tailscale.com/) runs on this computer and on your phone, the dashboard's
+**Phone access** page sets it up in three clicks:
+1. **Create and start it:** a scheduled task (`<Prefix>-Dashboard`, created by
+   `setup_dashboard_task.ps1`) runs the dashboard in the background from logon, on
+   `127.0.0.1:8787` (`DASHBOARD_PORT`).
+2. **Tailscale address and password:** your computer's Tailscale name (filled in for you) and a
+   password of at least 8 characters, stored as a hash. The phone asks for it once, then
+   remembers it for 30 days. Changing it logs every phone out.
+3. **Turn on Tailscale Serve:** runs `tailscale serve --bg --https=8787 http://127.0.0.1:8787`,
+   which makes `https://<your-pc>.<tailnet>.ts.net:8787/` reachable from your own Tailscale
+   devices only. **Never use Tailscale Funnel for the dashboard**: Funnel makes it public.
+
+Then open that address on the phone, log in, and add it to the home screen (Chrome: menu ⋮ →
+*Add to Home screen* or *Install app*; Safari: Share → *Add to Home Screen*). It opens full
+screen like an app. After updating the code, restart the task:
+`Stop-ScheduledTask JobAlerts-Dashboard; Start-ScheduledTask JobAlerts-Dashboard`.
 
 ### 3. Set up the AI: Claude or Gemini
 
@@ -200,6 +228,9 @@ Run the morning task by hand: `Start-ScheduledTask JobAlerts-Morning`.
 | `jobalerts/dashboard.py`, `dashboard.html`, `dashboard_fr.json` | Local setup and status dashboard, French texts |
 | `dashboard.cmd` | Double-click to open the dashboard |
 | `setup_tasks.ps1` | Creates the scheduled tasks |
+| `setup_dashboard_task.ps1` | Always-on dashboard task, for phone access |
+| `jobalerts/kit.py` | Application kit sent after a Keep click |
+| `jobalerts/static/` | App icons for the phone |
 | `tests/` | Unit tests (no network, no secrets) |
 | `.github/workflows/ci.yml` | GitHub Actions: runs the tests on each push and pull request |
 | `data/jobs.db` | Local database: ads seen, decisions, notes (git-ignored) |

@@ -169,6 +169,12 @@ def collect_updates(con) -> dict:
                       allowed_updates=["message", "callback_query"])
         if not updates:
             break
+        # Telegram numbers updates one by one: a jump means someone else read them first.
+        if offset and updates[0]["update_id"] > offset:
+            lost = updates[0]["update_id"] - offset
+            stats["lost"] = stats.get("lost", 0) + lost
+            log.warning("%d Telegram update(s) missing before %s: read by another program, or expired",
+                        lost, updates[0]["update_id"])
         for u in updates:
             stats["updates"] += 1
             offset = max(offset, u["update_id"] + 1)
@@ -200,6 +206,11 @@ def collect_updates(con) -> dict:
         con.commit()
         db.set_meta(con, "tg_offset", str(offset))  # only after the DB commit: nothing lost
     _apply_notes(con)
+    if stats.get("lost"):
+        try:
+            send_text(t("updates_lost", n=stats["lost"]))
+        except Exception as e:
+            log.error("Could not send the lost-updates warning: %s", e)
     # Show the choice on the buttons (last choice per message).
     last = {}
     for chat, mid, uuid, decision in to_ack:

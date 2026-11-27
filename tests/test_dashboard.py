@@ -219,3 +219,74 @@ def test_language_saved_even_if_telegram_fails(client, env_file, monkeypatch):
     r = client.post("/api/language", base_url=BASE, headers=H, json={"alerts": "en"}).get_json()
     assert r["ok"] and r["telegram_sent"] is False and "no token" in r["telegram_error"]
     assert dotenv_values(env_file)["LANGUAGE"] == "en"
+
+
+REMOTE = "https://my-pc.tail1234.ts.net:8787"
+
+
+@pytest.fixture
+def remote(client, monkeypatch):
+    monkeypatch.setenv("DASHBOARD_REMOTE_HOST", "my-pc.tail1234.ts.net")
+    monkeypatch.setenv("DASHBOARD_SECRET", "test-secret")
+    monkeypatch.delenv("DASHBOARD_PASSWORD_HASH", raising=False)
+    monkeypatch.setattr(dashboard.app, "secret_key", None)
+    monkeypatch.setattr(dashboard, "_login_failures", [])
+    monkeypatch.setattr(dashboard.time, "sleep", lambda s: None)
+    # write_env is replaced by a version that also updates os.environ (reload_settings is a no-op here)
+    real_write = dashboard.write_env
+
+    def write(updates):
+        real_write(updates)
+        for k, v in updates.items():
+            monkeypatch.setenv(k, v)
+    monkeypatch.setattr(dashboard, "write_env", write)
+    return client
+
+
+def test_unknown_hosts_are_still_refused(remote):
+    assert remote.get("/", base_url="https://evil.ts.net:8787").status_code == 403
+
+
+def test_remote_needs_login(remote):
+    r = remote.get("/", base_url=REMOTE)
+    assert r.status_code == 302 and r.headers["Location"].endswith("/login")
+    assert remote.get("/api/settings", base_url=REMOTE, headers=H).status_code == 401
+    assert remote.get("/manifest.webmanifest", base_url=REMOTE).status_code == 200
+    assert b"No password is set yet" in remote.get("/login", base_url=REMOTE).data
+
+
+def test_remote_login_flow(remote):
+    r = remote.post("/api/remote", base_url=BASE, headers=H, json={"host": "https://My-PC.tail1234.ts.net:8787/", "password": "correct horse"})
+    assert r.status_code == 200 and r.get_json()["password_set"] and r.get_json()["host"] == "my-pc.tail1234.ts.net"
+    assert remote.post("/login", base_url=REMOTE, data={"password": "wrong pass"}).status_code == 401
+    r = remote.post("/login", base_url=REMOTE, data={"password": "correct horse"})
+    assert r.status_code == 302
+    page = remote.get("/", base_url=REMOTE)
+    assert page.status_code == 200 and b"const REMOTE = true" in page.data
+    assert remote.get("/api/settings", base_url=REMOTE, headers=H).status_code == 200
+    # a new password logs the phone out
+    remote.post("/api/remote", base_url=BASE, headers=H, json={"password": "another one"})
+    assert remote.get("/", base_url=REMOTE).status_code == 302
+
+
+def test_login_is_throttled(remote):
+    remote.post("/api/remote", base_url=BASE, headers=H, json={"password": "correct horse"})
+    for _ in range(5):
+        remote.post("/login", base_url=REMOTE, data={"password": "nope nope"})
+    assert remote.post("/login", base_url=REMOTE, data={"password": "correct horse"}).status_code == 429
+
+
+@pytest.mark.parametrize("body, error", [
+    ({"password": "short"}, "8 characters"),
+    ({"host": "not a host"}, "looks wrong"),
+    ({"host": "localhost"}, "Tailscale address"),
+])
+def test_remote_settings_validation(remote, body, error):
+    r = remote.post("/api/remote", base_url=BASE, headers=H, json=body)
+    assert r.status_code == 400 and error in r.get_json()["error"]
+
+
+def test_secrets_of_remote_access_are_never_returned(remote):
+    remote.post("/api/remote", base_url=BASE, headers=H, json={"password": "correct horse"})
+    data = str(remote.get("/api/settings", base_url=BASE, headers=H).get_json())
+    assert "DASHBOARD_PASSWORD_HASH" not in data and "test-secret" not in data
