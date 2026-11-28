@@ -44,6 +44,7 @@ Register-ScheduledTask -TaskName $name -Action $action -Trigger $trigger -Settin
     -Description "Job alerts: Telegram notice to the admin when the computer restarts" -Force | Out-Null
 "$name created: it runs at every Windows startup, before login."
 if ($Test) {
+    Set-Location $root  # an administrator window starts in C:\Windows\System32
     & (Join-Path $root ".venv\Scripts\python.exe") -m jobalerts.boot_notice --test
     "Test sent: check the admin's Telegram."
 }
