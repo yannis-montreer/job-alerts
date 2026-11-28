@@ -153,6 +153,16 @@ If [Tailscale](https://tailscale.com/) runs on this computer and on your phone, 
    (5 wrong passwords in 10 minutes) is reported on Telegram; the always-on dashboard is served by
    waitress. Turn it off with `tailscale funnel --https=10000 off`.
 
+**Users.** From the phone, the dashboard password belongs to the **admin** (username `admin`);
+on the computer itself the dashboard is always the admin's. The **Users** page creates accounts
+(username and a starting password of 12+ characters, kept in `users.json`, git-ignored) and gives
+each one alerts (profiles). A user sees only those profiles and changes only what concerns them:
+preferences, profile text, CV, area, scores, Telegram language, message time, a full run of their
+own profile, their history, and their password (*My account*). They can add a Telegram bot to a
+profile that has none; once its token and chat are saved, only the admin can change or remove it.
+Sources, Gmail, the AI, the schedule of the background tasks, other profiles and the run log stay
+the admin's. Every login, the admin's or a user's, is reported on the admin's Telegram.
+
 Then open that address on the phone, log in, and add it to the home screen (Chrome: menu ⋮ →
 *Add to Home screen* or *Install app*; Safari: Share → *Add to Home Screen*). It opens full
 screen like an app. After updating the code, restart the task:

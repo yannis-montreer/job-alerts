@@ -38,6 +38,10 @@ os.environ.update(TEST_ENV)
 
 from jobalerts import config, db, preferences, profiles  # noqa: E402
 
+# Tokens of extra bots (BOT_<ID>_TOKEN) are not in TEST_ENV: drop any read from a local .env.
+for _k in [k for k in os.environ if k.startswith("BOT_") and k.endswith("_TOKEN")]:
+    del os.environ[_k]
+
 
 @pytest.fixture(autouse=True)
 def isolated_preferences(tmp_path, monkeypatch):
@@ -45,8 +49,9 @@ def isolated_preferences(tmp_path, monkeypatch):
     monkeypatch.setattr(preferences, "PATH", tmp_path / "preferences.json")
     monkeypatch.setattr(profiles, "PATH", tmp_path / "profiles.json")  # no profiles.json: one profile from .env
     monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")  # never the real profile files
-    from jobalerts import cvdocs
+    from jobalerts import cvdocs, users
     monkeypatch.setattr(cvdocs, "APPS_DIR", tmp_path / "applications")  # never the real documents
+    monkeypatch.setattr(users, "PATH", tmp_path / "users.json")  # never the real accounts
 
 
 from jobalerts import dashboard as _dashboard  # noqa: E402

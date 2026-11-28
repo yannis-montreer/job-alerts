@@ -3,7 +3,7 @@ import json
 import pytest
 from dotenv import dotenv_values
 
-from jobalerts import dashboard
+from jobalerts import dashboard, profiles, users
 
 
 @pytest.fixture
@@ -234,7 +234,8 @@ def remote(client, monkeypatch):
     monkeypatch.setenv("DASHBOARD_SECRET", "test-secret")
     monkeypatch.delenv("DASHBOARD_PASSWORD_HASH", raising=False)
     monkeypatch.setattr(dashboard.app, "secret_key", None)
-    monkeypatch.setattr(dashboard, "_login_failures", [])
+    dashboard.ensure_secret_key()  # done by main() at start
+    monkeypatch.setattr(dashboard, "_login_failures", {})
     monkeypatch.setattr(dashboard.time, "sleep", lambda s: None)
     # write_env is replaced by a version that also updates os.environ (reload_settings is a no-op here)
     real_write = dashboard.write_env
@@ -379,9 +380,90 @@ def test_remote_logins_and_lockouts_are_reported(remote, monkeypatch):
     r = remote.post("/login", base_url=REMOTE, data={"password": "correct horse"},
                     headers={"X-Forwarded-For": "203.0.113.7"})
     assert r.status_code == 302, r.data[:300]
-    assert len(ALERTS) == 1 and "new login from 203.0.113.7" in ALERTS[0]
+    assert len(ALERTS) == 1 and "admin logged in from 203.0.113.7" in ALERTS[0]
     for _ in range(5):
         remote.post("/login", base_url=REMOTE, data={"password": "nope nope"})
     assert len(ALERTS) == 2 and "5 wrong passwords" in ALERTS[1]
     r = remote.get("/login", base_url=REMOTE)
     assert r.headers["Strict-Transport-Security"].startswith("max-age=")
+
+
+@pytest.fixture
+def two_alerts(remote):
+    """Two profiles: p1 with the admin's bot, p2 with no bot yet; a user "kari" owning p2."""
+    data = profiles.load()
+    data["profiles"].append(profiles.Profile(id="p2", name="Kari", candidate="Kari", bot=""))
+    profiles.save(data)
+    r = remote.post("/api/users", base_url=BASE, headers=H,
+                    json={"username": "Kari", "password": "kari password 1", "profiles": ["p2"]})
+    assert r.status_code == 200 and r.get_json()["user"]["username"] == "kari"
+    assert remote.post("/login", base_url=REMOTE, data={"username": "kari", "password": "kari password 1"}).status_code == 302
+    return remote
+
+
+def test_a_user_sees_only_their_alerts(two_alerts):
+    c = two_alerts
+    s = c.get("/api/settings", base_url=REMOTE, headers=H).get_json()
+    assert s["me"] == {"role": "user", "username": "kari"} and [p["id"] for p in s["profiles"]] == ["p2"]
+    assert "GMAIL_ADDRESS" not in s["values"] and set(s["secrets_set"]) == {"TELEGRAM_BOT_TOKEN"}
+    assert c.get("/api/settings", base_url=REMOTE, headers={**H, "X-Profile": "p1"}).status_code == 403
+    for path in ("/api/remote", "/api/users", "/api/gmail/test", "/api/schedule/catchup", "/api/profiles"):
+        assert c.post(path, base_url=REMOTE, headers=H, json={}).status_code in (403, 405), path
+    st = c.get("/api/status", base_url=REMOTE, headers=H).get_json()
+    assert "claude" not in st and "remote" not in st and st["last_runs"] == []
+    assert c.get("/api/run", base_url=REMOTE, headers=H).get_json()["log"] == []
+    assert c.post("/api/run", base_url=REMOTE, headers=H, json={"mode": "collect"}).status_code == 400
+    page = c.get("/", base_url=REMOTE).data
+    assert b'const ME = {"role": "user", "username": "kari"}' in page
+
+
+def test_a_user_changes_their_profile_but_not_the_machine(two_alerts):
+    c = two_alerts
+    ok = c.post("/api/settings", base_url=REMOTE, headers=H, json={"CANDIDATE_NAME": "Kari N", "PROFILE_NAME": "Kari", "MESSAGE_MIN_SCORE": "4", "DIGEST_MIN_SCORE": "3"})
+    assert ok.status_code == 200 and profiles.get("p2").candidate == "Kari N"
+    for body in ({"PROFILE_NAME": "Renamed"}, {"GMAIL_FINN_LABEL": "x"}, {"FINN_SUBJECT": "x"}, {"AI_PROVIDER": "gemini"},
+                 {"BOT": "b1"}, {"GEMINI_API_KEY": "k"}, {"clear": ["GEMINI_API_KEY"]}):
+        r = c.post("/api/settings", base_url=REMOTE, headers=H, json=body)
+        assert r.status_code == 400 and "admin" in r.get_json()["error"], body
+    assert profiles.get("p2").bot == "" and profiles.get("p2").name == "Kari"
+
+
+def test_a_user_adds_a_bot_once_then_it_is_locked(two_alerts):
+    c = two_alerts
+    assert c.post("/api/settings", base_url=REMOTE, headers=H, json={"TELEGRAM_BOT_TOKEN": "1:x"}).status_code == 400
+    assert c.post("/api/bots", base_url=REMOTE, headers=H, json={"name": "Kari's bot"}).status_code == 200
+    bot = profiles.get_bot(profiles.get("p2").bot)
+    assert bot and bot.id != "b1"
+    assert c.post("/api/settings", base_url=REMOTE, headers=H, json={"TELEGRAM_BOT_TOKEN": "222:kari"}).status_code == 200
+    assert c.post("/api/settings", base_url=REMOTE, headers=H, json={"TELEGRAM_CHAT_ID": "77"}).status_code == 200
+    for body in ({"TELEGRAM_BOT_TOKEN": "333:other"}, {"TELEGRAM_CHAT_ID": "78"}, {"BOT_NAME": "new name"}):
+        r = c.post("/api/settings", base_url=REMOTE, headers=H, json=body)
+        assert r.status_code == 400 and "only the admin" in r.get_json()["error"], body
+    assert c.post("/api/bots", base_url=REMOTE, headers=H, json={"name": "again"}).status_code == 400
+    assert profiles.get_bot(profiles.get("p2").bot).chat_id == "77"
+
+
+def test_user_passwords_and_alerts_are_the_admins(two_alerts):
+    c = two_alerts
+    assert c.post("/api/account", base_url=REMOTE, headers=H, json={"current": "wrong", "new": "x" * 12}).status_code == 400
+    assert c.post("/api/account", base_url=REMOTE, headers=H, json={"current": "kari password 1", "new": "short"}).status_code == 400
+    assert c.post("/api/account", base_url=REMOTE, headers=H, json={"current": "kari password 1", "new": "kari password 2"}).status_code == 200
+    assert c.get("/api/settings", base_url=REMOTE, headers=H).status_code == 200  # still logged in here
+    uid = users.by_username("kari").id
+    c.post("/api/users/update", base_url=BASE, headers=H, json={"id": uid, "profiles": []})
+    s = c.get("/api/settings", base_url=REMOTE, headers=H).get_json()
+    assert s["profiles"] == [] and c.get("/api/profile", base_url=REMOTE, headers=H).status_code == 403
+    c.post("/api/users/update", base_url=BASE, headers=H, json={"id": uid, "password": "reset by admin"})
+    assert c.get("/api/settings", base_url=REMOTE, headers=H).status_code == 401  # logged out
+    assert c.post("/login", base_url=REMOTE, data={"username": "kari", "password": "kari password 2"}).status_code == 401
+    assert c.post("/api/users", base_url=BASE, headers=H, json={"username": "admin", "password": "x" * 12}).status_code == 400
+
+
+def test_the_admin_logs_in_as_admin_and_old_sessions_stay_admin(remote):
+    remote.post("/api/remote", base_url=BASE, headers=H, json={"password": "correct horse"})
+    assert remote.post("/login", base_url=REMOTE, data={"username": "Admin", "password": "correct horse"}).status_code == 302
+    s = remote.get("/api/settings", base_url=REMOTE, headers=H).get_json()
+    assert s["me"]["role"] == "admin" and "GMAIL_ADDRESS" in s["values"]
+    with remote.session_transaction(base_url=REMOTE) as sess:  # a session from before users existed
+        sess.pop("uid")
+    assert remote.get("/api/users", base_url=REMOTE, headers=H).status_code == 200

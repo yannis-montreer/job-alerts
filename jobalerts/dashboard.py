@@ -39,10 +39,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import dotenv_values, load_dotenv
-from flask import Flask, abort, jsonify, redirect, request, send_file, session
+from flask import Flask, abort, g, jsonify, redirect, request, send_file, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from . import config, cvdocs, db, finn, linkedin, listener, preferences, profiles, telegram, texts, triage
+from . import config, cvdocs, db, finn, linkedin, listener, preferences, profiles, telegram, texts, triage, users
 
 ROOT = config.ROOT
 ENV_PATH = ROOT / ".env"
@@ -82,7 +82,7 @@ app = Flask(__name__)
 app.config.update(MAX_CONTENT_LENGTH=12 * 1024 * 1024, SESSION_COOKIE_NAME="jobalerts_session", SESSION_COOKIE_SECURE=True, SESSION_COOKIE_HTTPONLY=True,
                   SESSION_COOKIE_SAMESITE="Lax", PERMANENT_SESSION_LIFETIME=timedelta(days=30))
 TOKEN = secrets.token_urlsafe(24)
-_login_failures: list[float] = []
+_login_failures: dict[str, list[float]] = {}  # username -> times of wrong passwords
 PORT = DEFAULT_PORT
 _run = {"proc": None, "mode": None, "started": None}
 
@@ -124,9 +124,55 @@ def _fingerprint(h: str) -> str:  # changing the password logs every phone out
     return hashlib.sha256(h.encode()).hexdigest()[:24]
 
 
+def account() -> dict | None:
+    """Who uses the dashboard: the admin (on this computer, or with the admin password) or a user
+    (users.json), or None when a remote visitor is not logged in. Changing a password logs out
+    the sessions made with the old one."""
+    if is_local():
+        return dict(role="admin", id=users.ADMIN, username=users.ADMIN)
+    auth = str(session.get("auth", ""))
+    uid = session.get("uid") or users.ADMIN  # sessions from before users existed are the admin's
+    if uid == users.ADMIN:
+        h = password_hash()
+        if h and secrets.compare_digest(auth, _fingerprint(h)):
+            return dict(role="admin", id=uid, username=users.ADMIN)
+        return None
+    u = users.get(uid)
+    if u and u.password_hash and secrets.compare_digest(auth, _fingerprint(u.password_hash)):
+        return dict(role="user", id=u.id, username=u.username, profiles=u.profile_ids(), language=u.language)
+    return None
+
+
 def logged_in() -> bool:
-    h = password_hash()
-    return bool(h) and secrets.compare_digest(str(session.get("auth", "")), _fingerprint(h))
+    return account() is not None
+
+
+def is_user() -> bool:
+    a = getattr(g, "account", None)
+    return bool(a) and a["role"] == "user"
+
+
+# What a user (not the admin) may call; everything else is the admin's. A user works only on the
+# profiles the admin assigned to them.
+USER_ROUTES = {
+    ("GET", "/"), ("GET", "/logout"), ("GET", "/api/account"), ("POST", "/api/account"),
+    ("GET", "/api/settings"), ("POST", "/api/settings"), ("POST", "/api/bots"), ("GET", "/api/status"),
+    ("POST", "/api/telegram/detect"), ("POST", "/api/telegram/test"), ("POST", "/api/language"),
+    ("GET", "/api/cv"), ("POST", "/api/cv/upload"), ("POST", "/api/cv/facts"), ("POST", "/api/cv/layout"),
+    ("POST", "/api/cv/layout/reset"), ("GET", "/api/cv/preview"), ("GET", "/api/cv/original"),
+    ("GET", "/api/applications/file"), ("GET", "/api/preferences"), ("POST", "/api/preferences"),
+    ("GET", "/api/feedback"), ("GET", "/api/profile"), ("POST", "/api/profile"),
+    ("GET", "/api/schedule"), ("POST", "/api/schedule"), ("POST", "/api/run"), ("GET", "/api/run"),
+    ("GET", "/api/history"),
+}
+NO_PROFILE_ROUTES = {("GET", "/"), ("GET", "/logout"), ("GET", "/api/account"), ("POST", "/api/account"),
+                     ("GET", "/api/settings")}
+
+
+def _deny(message: str):
+    if request.path.startswith("/api/"):
+        return jsonify(ok=False, error=message), 403
+    abort(403)
 
 
 def ensure_secret_key():
@@ -145,14 +191,25 @@ def _guard():
         abort(403)  # blocks DNS-rebinding tricks from other websites
     if remote:
         ensure_secret_key()
-        if request.path not in PUBLIC_PATHS and not logged_in():
-            if request.path.startswith("/api/"):
-                abort(401)
-            return redirect("/login")
+    g.account = account()
+    if remote and request.path not in PUBLIC_PATHS and g.account is None:
+        if request.path.startswith("/api/"):
+            abort(401)
+        return redirect("/login")
     if request.path.startswith("/api/") and request.headers.get("X-Token") != TOKEN:
         abort(403)
     # The profile picked in the page (each request works on it).
     pid = request.headers.get("X-Profile", "")
+    if is_user() and request.path not in PUBLIC_PATHS:
+        key = (request.method, request.path)
+        if key not in USER_ROUTES:
+            return _deny("Only the admin can do this")
+        own = g.account["profiles"]
+        pid = pid or (own[0] if own else "")
+        if pid and pid not in own:
+            return _deny("This profile is not yours")
+        if not pid and key not in NO_PROFILE_ROUTES:
+            return _deny("No alert is assigned to you yet: ask the admin")
     profiles._local.profile = profiles.get(pid) if pid else None
 
 
@@ -423,14 +480,25 @@ def profile_state() -> dict:
 def page():
     html = PAGE.read_text(encoding="utf-8")
     ui = env_values().get("DASHBOARD_LANGUAGE", "").strip().lower()
+    if is_user() and g.account.get("language"):
+        ui = g.account["language"]
+    me = json.dumps(dict(role=g.account["role"], username=g.account["username"]) if g.account else {})
     fr = json.dumps(json.loads(PAGE_FR.read_text(encoding="utf-8")), ensure_ascii=False).replace("</", "<\\/")
     html = html.replace("{{TOKEN}}", TOKEN).replace("{{UI_LANG}}", ui if ui in ("en", "fr") else "en").replace("{{FR}}", fr)
-    html = html.replace("{{REMOTE}}", "true" if is_remote() else "false")
+    html = html.replace("{{REMOTE}}", "true" if is_remote() else "false").replace("{{ME}}", me.replace("</", "<\\/"))
     return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+USER_VALUE_KEYS = ("CANDIDATE_NAME", "LANGUAGE", "MESSAGE_MIN_SCORE", "DIGEST_MIN_SCORE", "NORWEGIAN_REQUIRED",
+                   "TELEGRAM_CHAT_ID", "PROFILE_NAME", "BOT", "BOT_NAME")
+USER_SETTING_KEYS = {"CANDIDATE_NAME", "LANGUAGE", "MESSAGE_MIN_SCORE", "DIGEST_MIN_SCORE", "NORWEGIAN_REQUIRED", "area"}
 
 
 @app.get("/api/settings")
 def get_settings():
+    if is_user() and not g.account["profiles"]:
+        return jsonify(ok=True, me=dict(role="user", username=g.account["username"]), values={}, secrets_set={},
+                       area=None, env_exists=True, profile="", profiles=[], bots=[])
     env = env_values()
     munis = _split(env.get("TARGET_MUNICIPALITIES")) or DEFAULT_MUNICIPALITIES
     counties = _split(env.get("TARGET_COUNTIES")) or DEFAULT_COUNTIES
@@ -446,7 +514,20 @@ def get_settings():
                   BOT_NAME=bot.name if bot else "")
     secrets_set = {k: bool(env.get(k)) for k in SECRET_KEYS}
     secrets_set["TELEGRAM_BOT_TOKEN"] = bool(bot and bot.token)
+    if is_user():  # only this user's profiles and bot, no machine settings
+        own = set(g.account["profiles"])
+        return jsonify(
+            ok=True, me=dict(role="user", username=g.account["username"]),
+            values={k: values[k] for k in USER_VALUE_KEYS},
+            secrets_set={"TELEGRAM_BOT_TOKEN": secrets_set["TELEGRAM_BOT_TOKEN"]},
+            area=dict(groups=AREA_GROUPS, selected=sorted(munis & known), extra=sorted(munis - known),
+                      counties=sorted(counties)),
+            env_exists=True, profile=p.id,
+            profiles=[dict(id=x.id, name=x.name or x.id, issue=profile_issue(x)) for x in profiles.all_profiles() if x.id in own],
+            bots=[bot.public()] if bot else [],
+        )
     return jsonify(
+        me=dict(role="admin", username=users.ADMIN),
         ok=True,
         values=values,
         secrets_set=secrets_set,
@@ -459,9 +540,45 @@ def get_settings():
     )
 
 
+def _user_settings(body: dict) -> dict:
+    """What a user may change: their profile's settings, and a bot that is not set up yet
+    (token, chat, name). Unchanged values of other fields are ignored; changed ones refused."""
+    p = profiles.current()
+    bot = profiles.get_bot(p.bot)
+    ready = bool(bot and bot.token and str(bot.chat_id).strip())
+    current = dict(PROFILE_NAME=p.name, BOT=p.bot, BOT_NAME=bot.name if bot else "",
+                   TELEGRAM_CHAT_ID=str(bot.chat_id).strip() if bot else "")
+    locked = "This bot is already set up: only the admin can change it"
+    out = {}
+    for k, v in body.items():
+        value = str(v or "").strip() if k != "area" else v
+        if k in USER_SETTING_KEYS:
+            out[k] = v
+        elif k == "TELEGRAM_BOT_TOKEN":
+            if value:
+                if bot is None:
+                    raise UserError("Add a bot to this profile first (+ New bot)")
+                if bot.token:
+                    raise UserError(locked)
+                out[k] = value
+        elif k in ("TELEGRAM_CHAT_ID", "BOT_NAME") and value != current[k]:
+            if bot is None:
+                raise UserError("Add a bot to this profile first (+ New bot)")
+            if (k == "TELEGRAM_CHAT_ID" and current[k]) or ready:
+                raise UserError(locked)
+            out[k] = value
+        elif k in current and value == current[k]:
+            continue
+        else:
+            raise UserError("Only the admin can change this setting")
+    return out
+
+
 @app.post("/api/settings")
 def save_settings():
     body = request.get_json(force=True) or {}
+    if is_user():
+        body = _user_settings(body)
     updates = {}
     for k in (PLAIN_KEYS | PROFILE_KEYS) - {"TARGET_MUNICIPALITIES", "TARGET_COUNTIES"}:
         if k in body:
@@ -602,6 +719,8 @@ def delete_profile():
 def create_bot():
     """A new bot entry for the selected profile; its token goes to .env (BOT_<ID>_TOKEN)."""
     name = str((request.get_json(force=True) or {}).get("name", "")).strip()[:40]
+    if is_user() and profiles.get_bot(profiles.current().bot):
+        raise UserError("This profile already has a bot: only the admin can change it")
     data = profiles.load()
     bot = profiles.Bot(id=profiles.next_id("b", data["bots"]), name=name)
     bot.token_env = f"BOT_{bot.id.upper()}_TOKEN"
@@ -637,6 +756,18 @@ def status():
         tasks, tasks_error = [], str(e)[:300]
     running = _run["proc"] is not None and _run["proc"].poll() is None
     provider = (env.get("AI_PROVIDER") or "claude").lower()
+    if is_user():  # this user's profile only: nothing about the machine, the AI or other people
+        return jsonify(
+            ok=True,
+            telegram=dict(token=bool(_bot() and _bot().token), chat_id=bool(_bot() and str(_bot().chat_id).strip()),
+                          listener=_listener_active()),
+            profile=profile_state(), name=bool(profiles.current().candidate),
+            current=dict(id=profiles.current().id, name=profiles.current().name or profiles.current().id,
+                         issue=profile_issue(profiles.current())),
+            tasks=[], tasks_error=tasks_error,
+            schedule=_for_viewer(schedule_state(tasks)) if not tasks_error else None,
+            db=db_stats(), last_runs=[], run=dict(running=running, mode=_run["mode"], started=_run["started"]),
+        )
     return jsonify(
         ok=True,
         ai=dict(provider=provider, gemini_key=bool(env.get("GEMINI_API_KEY")),
@@ -694,6 +825,8 @@ def set_language():
             updates[key] = value
     if not updates:
         raise UserError("Nothing to change")
+    if is_user() and "DASHBOARD_LANGUAGE" in updates:  # each user has their own dashboard language
+        users.update(g.account["id"], language=updates.pop("DASHBOARD_LANGUAGE"))
     if "LANGUAGE" in updates:
         save_profile_settings({"LANGUAGE": updates.pop("LANGUAGE")}, None, None)
         profiles._local.profile = profiles.get(profiles.current().id)  # reload: new language
@@ -713,10 +846,10 @@ def set_language():
 # ---------- phone access (Tailscale) ----------
 
 LOGIN_TEXTS = {
-    "en": dict(title="Job Alerts: log in", label="Dashboard password", button="Log in",
+    "en": dict(title="Job Alerts: log in", user="Username", label="Password", button="Log in",
                wrong="Wrong password.", wait="Too many attempts: wait 10 minutes.",
                unset="No password is set yet: on the computer, open the dashboard, page Phone access."),
-    "fr": dict(title="Alertes emploi : connexion", label="Mot de passe du tableau de bord", button="Se connecter",
+    "fr": dict(title="Alertes emploi : connexion", user="Nom d'utilisateur", label="Mot de passe", button="Se connecter",
                wrong="Mot de passe incorrect.", wait="Trop d'essais : attends 10 minutes.",
                unset="Aucun mot de passe n'est défini : sur l'ordinateur, ouvre le tableau de bord, page Accès mobile."),
 }
@@ -733,7 +866,8 @@ input{width:100%%;box-sizing:border-box;padding:10px;border:1px solid var(--line
 button{margin-top:14px;width:100%%;padding:10px;border:0;border-radius:8px;background:var(--accent);color:#fff;font:inherit;font-weight:600}
 p{color:var(--bad);margin:12px 0 0}</style></head><body>
 <form method="post" action="/login"><h1>%(title)s</h1>
-<label for="pw">%(label)s</label><input id="pw" name="password" type="password" autocomplete="current-password" autofocus required>
+<label for="un">%(user)s</label><input id="un" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" autofocus required>
+<label for="pw" style="margin-top:12px">%(label)s</label><input id="pw" name="password" type="password" autocomplete="current-password" required>
 <button type="submit">%(button)s</button>%(note)s</form></body></html>"""
 
 
@@ -747,7 +881,7 @@ def _login_page(error: str = "", status: int = 200):
     ui, tx = _login_texts()
     note = tx["unset"] if not password_hash() else error
     e = htmllib.escape
-    page = LOGIN_PAGE % dict(lang=ui, title=e(tx["title"]), label=e(tx["label"]), button=e(tx["button"]),
+    page = LOGIN_PAGE % dict(lang=ui, title=e(tx["title"]), user=e(tx["user"]), label=e(tx["label"]), button=e(tx["button"]),
                              note=f"<p>{e(note)}</p>" if note else "")
     return page, status, {"Content-Type": "text/html; charset=utf-8"}
 
@@ -760,24 +894,37 @@ def login():
         return _login_page()
     _, tx = _login_texts()
     now = time.time()
-    _login_failures[:] = [x for x in _login_failures if now - x < 600]
-    if len(_login_failures) >= 5:
+    name = request.form.get("username", "").strip().lower()[:30] or users.ADMIN
+    for k in list(_login_failures):
+        _login_failures[k] = [x for x in _login_failures[k] if now - x < 600]
+    fails = _login_failures.setdefault(name, [])
+    if len(fails) >= 5 or sum(map(len, _login_failures.values())) >= 20:
         return _login_page(tx["wait"], 429)
-    h = password_hash()
-    if h and check_password_hash(h, request.form.get("password", "")):
-        _login_failures.clear()
+    password = request.form.get("password", "")
+    if name == users.ADMIN:
+        uid, h = users.ADMIN, password_hash()
+        ok = bool(h) and check_password_hash(h, password)
+    else:
+        u = users.by_username(name)
+        uid, h = (u.id, u.password_hash) if u else ("", "")
+        ok = bool(u) and u.check(password)
+        if not u:
+            check_password_hash(generate_password_hash("x"), password)  # same delay as a real check
+    if ok:
+        fails.clear()
         session.clear()
         session.permanent = True
+        session["uid"] = uid
         session["auth"] = _fingerprint(h)
-        alert_owner(f"🔐 Dashboard: new login from {_client()} ({datetime.now():%d.%m %H:%M}). "
-                    "Not you? Change the dashboard password (Phone access page), or turn the public access off.")
+        alert_owner(f"🔐 Dashboard: {name} logged in from {_client()} ({datetime.now():%d.%m %H:%M}). "
+                    "Not expected? Change that password, or turn the public access off.")
         return redirect("/")
-    _login_failures.append(now)
-    if len(_login_failures) == 5:
-        alert_owner(f"⚠️ Dashboard: 5 wrong passwords in 10 minutes (last from {_client()}). "
-                    "Logins are paused for 10 minutes.")
+    fails.append(now)
+    if len(fails) == 5:
+        alert_owner(f"⚠️ Dashboard: 5 wrong passwords for \"{name}\" in 10 minutes (last from {_client()}). "
+                    "Logins for this name are paused for 10 minutes.")
     time.sleep(1)
-    return _login_page(tx["wrong"] if h else "", 401)
+    return _login_page(tx["wrong"] if password_hash() else "", 401)
 
 
 @app.get("/logout")
@@ -1055,9 +1202,17 @@ def claude_login():
     return jsonify(ok=True)
 
 
+def _for_viewer(state: dict) -> dict:
+    """A user sees only their own profiles' times, nothing about the background tasks."""
+    if is_user():
+        own = set(g.account["profiles"])
+        state = dict(state, profiles=[r for r in state["profiles"] if r["id"] in own], catchup=None)
+    return state
+
+
 @app.get("/api/schedule")
 def get_schedule():
-    return jsonify(ok=True, **schedule_state())
+    return jsonify(ok=True, **_for_viewer(schedule_state()))
 
 
 @app.post("/api/schedule")
@@ -1073,7 +1228,7 @@ def save_schedule():
     next(x for x in data["profiles"] if x.id == pid).send_time = at
     profiles.save(data)
     ensure_profile_tasks()
-    return jsonify(ok=True, **schedule_state())
+    return jsonify(ok=True, **_for_viewer(schedule_state()))
 
 
 @app.post("/api/schedule/catchup")
@@ -1110,6 +1265,10 @@ def start_run():
     if _run["proc"] is not None and _run["proc"].poll() is None:
         raise UserError("A run is already in progress")
     args = [str(PYTHONW if PYTHONW.exists() else sys.executable), "-m", "jobalerts.run"]
+    if is_user():  # a user runs only their own profile
+        if mode != "full":
+            raise UserError("Only the admin can do this")
+        args += ["--profile", profiles.current().id]
     if mode == "collect":
         args.append("--collect-only")
     _run.update(proc=subprocess.Popen(args, cwd=str(ROOT)), mode=mode,
@@ -1122,7 +1281,69 @@ def run_state():
     p = _run["proc"]
     running = p is not None and p.poll() is None
     return jsonify(ok=True, running=running, mode=_run["mode"], started=_run["started"],
-                   exit_code=None if (p is None or running) else p.returncode, log=log_tail(40))
+                   exit_code=None if (p is None or running) else p.returncode,
+                   log=[] if is_user() else log_tail(40))  # the log is about everyone
+
+
+# ---------- accounts ----------
+
+@app.get("/api/account")
+def get_account():
+    a = g.account or {}
+    return jsonify(ok=True, role=a.get("role"), username=a.get("username"))
+
+
+@app.post("/api/account")
+def change_my_password():
+    """A user changes their own password (the admin's is on the Phone access page)."""
+    if not is_user():
+        raise UserError("The admin password is changed on the Phone access page")
+    body = request.get_json(force=True) or {}
+    u = users.get(g.account["id"])
+    if not u.check(str(body.get("current", ""))):
+        raise UserError("The current password is wrong")
+    try:
+        u = users.update(u.id, password=str(body.get("new", "")))
+    except ValueError as e:
+        raise UserError(str(e)) from None
+    session["auth"] = _fingerprint(u.password_hash)  # stay logged in here; other devices are logged out
+    return jsonify(ok=True)
+
+
+@app.get("/api/users")
+def list_users():
+    return jsonify(ok=True, users=[u.public() for u in users.load()],
+                   profiles=[dict(id=p.id, name=p.name or p.id) for p in profiles.all_profiles()])
+
+
+@app.post("/api/users")
+def create_user():
+    body = request.get_json(force=True) or {}
+    try:
+        u = users.create(str(body.get("username", "")), str(body.get("password", "")), body.get("profiles") or [])
+    except ValueError as e:
+        raise UserError(str(e)) from None
+    return jsonify(ok=True, user=u.public())
+
+
+@app.post("/api/users/update")
+def update_user():
+    body = request.get_json(force=True) or {}
+    try:
+        u = users.update(str(body.get("id", "")), profile_ids=body.get("profiles"),
+                         password=str(body["password"]) if body.get("password") else None)
+    except ValueError as e:
+        raise UserError(str(e)) from None
+    return jsonify(ok=True, user=u.public())
+
+
+@app.post("/api/users/delete")
+def delete_user():
+    try:
+        users.delete(str((request.get_json(force=True) or {}).get("id", "")))
+    except ValueError as e:
+        raise UserError(str(e)) from None
+    return jsonify(ok=True)
 
 
 @app.get("/api/history")

@@ -94,6 +94,11 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
 .profilepick label { margin: 0 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
 .profilepick select { padding: 6px 8px; font-weight: 600; }
 .ptag { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 10px; background: var(--code); color: var(--muted); margin-left: 6px; vertical-align: middle; }
+.role-user .adminonly, body:not(.role-user) .useronly { display: none !important; }
+.userrow { border-top: 1px solid var(--line); padding: 12px 0; }
+.userrow:first-child { border-top: 0; padding-top: 0; }
+.userrow .who { font-weight: 600; }
+.userrow .muni { margin: 6px 0; }
 .tabbar, .menulist .phoneonly { display: none; }
 .menulist { display: grid; gap: 8px; }
 .menulist a { display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; color: var(--text); text-decoration: none; font-weight: 600; }
@@ -153,20 +158,22 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
   <a href="#overview">Overview</a>
   <a href="#prefs">Preferences</a>
   <a href="#search">Profile &amp; area</a>
-  <a href="#sources">Sources</a>
+  <a href="#sources" class="adminonly">Sources</a>
   <a href="#telegram">Output (Telegram)</a>
-  <a href="#ai">AI (Claude / Gemini)</a>
+  <a href="#ai" class="adminonly">AI (Claude / Gemini)</a>
   <a href="#schedule">Schedule</a>
   <a href="#run">Run now</a>
   <a href="#history">History</a>
-  <a href="#phone">Phone access</a>
+  <a href="#phone" class="adminonly">Phone access</a>
+  <a href="#users" class="adminonly">Users</a>
+  <a href="#account" class="useronly">My account</a>
   <a href="/logout" id="logoutLink" hidden>Log out</a>
 </nav>
 <div class="tabbar" id="tabbar">
   <a href="#overview" data-tabs="overview"><span class="ic notr">🏠</span><span>Overview</span></a>
   <a href="#history" data-tabs="history"><span class="ic notr">📋</span><span>History</span></a>
   <a href="#run" data-tabs="run"><span class="ic notr">▶️</span><span>Run now</span></a>
-  <a href="#menu" data-tabs="menu prefs search sources telegram ai schedule phone"><span class="ic notr">☰</span><span>Menu</span></a>
+  <a href="#menu" data-tabs="menu prefs search sources telegram ai schedule phone users account"><span class="ic notr">☰</span><span>Menu</span></a>
 </div>
 <main>
 
@@ -176,11 +183,13 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
   <div class="menulist">
     <a href="#prefs"><span class="ic notr">🎯</span><span>Preferences<span class="sub">Roles wanted, to avoid, deal-breakers</span></span></a>
     <a href="#search"><span class="ic notr">👤</span><span>Profile &amp; area<span class="sub">Profile text, CV, places</span></span></a>
-    <a href="#sources"><span class="ic notr">📥</span><span>Sources<span class="sub">NAV, Finn, LinkedIn</span></span></a>
+    <a href="#sources" class="adminonly"><span class="ic notr">📥</span><span>Sources<span class="sub">NAV, Finn, LinkedIn</span></span></a>
     <a href="#telegram"><span class="ic notr">💬</span><span>Output (Telegram)<span class="sub">Bot, chat, scores</span></span></a>
-    <a href="#ai"><span class="ic notr">🤖</span><span>AI (Claude / Gemini)<span class="sub">Which AI sorts the ads</span></span></a>
+    <a href="#ai" class="adminonly"><span class="ic notr">🤖</span><span>AI (Claude / Gemini)<span class="sub">Which AI sorts the ads</span></span></a>
     <a href="#schedule"><span class="ic notr">⏰</span><span>Schedule<span class="sub">Time of the daily message</span></span></a>
-    <a href="#phone"><span class="ic notr">📱</span><span>Phone access<span class="sub">Tailscale, password, home screen</span></span></a>
+    <a href="#phone" class="adminonly"><span class="ic notr">📱</span><span>Phone access<span class="sub">Tailscale, password, home screen</span></span></a>
+    <a href="#users" class="adminonly"><span class="ic notr">👥</span><span>Users<span class="sub">Accounts and their alerts</span></span></a>
+    <a href="#account" class="useronly"><span class="ic notr">🔑</span><span>My account<span class="sub">Password</span></span></a>
     <a href="/logout" id="menuLogout" class="phoneonly" hidden><span class="ic notr">🚪</span><span>Log out</span></a>
   </div>
 </section>
@@ -188,9 +197,10 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
 <section id="overview">
   <h2>Overview</h2>
   <p class="lead">What is set up, and what is left. Each line links to its section.</p>
+  <div class="card useronly" id="noAlerts" hidden>No alert is assigned to you yet: ask the admin.</div>
   <div class="card"><ul class="checks" id="checks"><li>Loading…</li></ul></div>
   <div class="card"><h3>Numbers</h3><div class="stats" id="stats"></div></div>
-  <div class="card"><h3>Recent runs</h3><pre class="log" id="lastRuns">…</pre></div>
+  <div class="card adminonly"><h3>Recent runs</h3><pre class="log" id="lastRuns">…</pre></div>
 </section>
 
 <section id="prefs">
@@ -238,7 +248,7 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
     <div class="grid2">
       <div><label for="PROFILE_NAME">Profile name <span class="hint">shown in the profile list</span></label>
         <input type="text" id="PROFILE_NAME"></div>
-      <div><label>Other profiles</label>
+      <div class="adminonly"><label>Other profiles</label>
         <div class="row" style="margin-top:0"><button type="button" onclick="pickProfile('__new')">+ New profile</button>
           <button type="button" id="deleteProfileBtn" onclick="deleteProfile()">Delete this profile</button></div></div>
       <div><label for="CANDIDATE_NAME">First name <span class="hint">used in the sorting instructions</span></label>
@@ -294,18 +304,20 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
   <p class="lead">The bot that sends you the ads, with Keep / Reject buttons. Each profile has its own bot (two profiles may share one).</p>
   <div class="card">
     <h3>Bot of this profile</h3>
-    <div class="grid2">
+    <div class="grid2 adminonly">
       <div><label for="BOT">Bot</label><select id="BOT"></select></div>
       <div><label for="BOT_NAME">Bot name <span class="hint">for you, e.g. "Anna's alerts"</span></label><input type="text" id="BOT_NAME"></div>
     </div>
+    <p class="useronly" id="botMine"></p>
     <div class="row">
-      <button class="primary" onclick="saveFields(['BOT', 'BOT_NAME'], 'botMsg')">Save</button>
-      <button onclick="newBot()">+ New bot</button>
+      <button class="primary adminonly" onclick="saveFields(['BOT', 'BOT_NAME'], 'botMsg')">Save</button>
+      <button id="newBotBtn" onclick="newBot()">+ New bot</button>
     </div>
     <p class="hint" style="margin-top:12px">The steps below set up the bot chosen here: its token, its chat, a test.</p>
+    <p class="hint useronly">Once its token and chat are saved, only the admin can change or remove the bot.</p>
     <div class="msg" id="botMsg"></div>
   </div>
-  <div class="card">
+  <div class="card" id="tgCard1">
     <h3>1. Create your bot</h3>
     <ol class="steps">
       <li>In Telegram, open <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> and send <code>/newbot</code>.</li>
@@ -317,7 +329,7 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
     <div class="row"><button class="primary" onclick="saveFields(['TELEGRAM_BOT_TOKEN'], 'tgMsg1')">Save token</button></div>
     <div class="msg" id="tgMsg1"></div>
   </div>
-  <div class="card">
+  <div class="card" id="tgCard2">
     <h3>2. Link your chat</h3>
     <ol class="steps">
       <li>Open your bot in Telegram<span id="botLink"></span> and send it any message (e.g. "hello").</li>
@@ -471,11 +483,11 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
     <div class="row"><button class="primary" onclick="saveSendTime()">Save</button></div>
     <div class="msg" id="sendMsg"></div>
   </div>
-  <div class="card">
+  <div class="card adminonly">
     <h3>All profiles</h3>
     <div id="allTimes">Loading…</div>
   </div>
-  <div class="card">
+  <div class="card adminonly">
     <h3>Background</h3>
     <ul class="checks" id="bgChecks"><li>Loading…</li></ul>
     <p class="hint" style="margin-top:12px">The always-on dashboard saves each Telegram tap within seconds. The backup click check reads the taps every 10 minutes during a window, for times when the always-on dashboard is not running.</p>
@@ -495,12 +507,52 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
   <div class="card">
     <div class="row" style="margin-top:0">
       <button class="primary" id="runFull" onclick="startRun('full')">Full run</button>
-      <button id="runCollect" onclick="startRun('collect')">Collect clicks only</button>
+      <button id="runCollect" class="adminonly" onclick="startRun('collect')">Collect clicks only</button>
     </div>
     <p class="hint">A full run fetches new ads, sorts them with the AI (1-3 minutes) and sends the relevant ones to Telegram.</p>
+    <p class="hint useronly">Only for this profile, to its own Telegram.</p>
     <div class="msg" id="runMsg"></div>
-    <pre class="log" id="runLog">…</pre>
+    <pre class="log adminonly" id="runLog">…</pre>
   </div>
+</section>
+
+<section id="users">
+  <h2>Users</h2>
+  <p class="lead">People who log in with their own name and password. Each one sees and changes only the alerts (profiles) given to them: preferences, profile text, CV, area, scores, message time, and a Telegram bot for a profile that has none. Sources, the AI, Gmail, the bots already set up and the other alerts stay yours.</p>
+  <div class="card">
+    <h3>Accounts</h3>
+    <div id="userList">Loading…</div>
+    <div class="msg" id="usersMsg"></div>
+  </div>
+  <div class="card">
+    <h3>New user</h3>
+    <div class="grid2">
+      <div><label for="newUserName">Username <span class="hint">letters, digits, dot, dash</span></label><input type="text" id="newUserName" autocomplete="off" autocapitalize="none"></div>
+      <div><label for="newUserPw">Starting password <span class="hint">at least 12 characters; they can change it</span></label><input type="password" id="newUserPw" autocomplete="new-password"></div>
+    </div>
+    <label>Alerts</label>
+    <div class="muni notr" id="newUserProfiles"></div>
+    <div class="row"><button class="primary" onclick="createUser()">Create</button></div>
+    <div class="msg" id="newUserMsg"></div>
+    <p class="hint" style="margin-top:12px">You log in as "admin" with your own password. Each login is reported on Telegram.</p>
+  </div>
+</section>
+
+<section id="account">
+  <h2>My account</h2>
+  <p class="lead">Logged in as <b class="notr" id="meName"></b>.</p>
+  <div class="card">
+    <h3>Change my password</h3>
+    <label for="myPwOld">Current password</label><input type="password" id="myPwOld" autocomplete="current-password">
+    <div class="grid2">
+      <div><label for="myPwNew">New password <span class="hint">at least 12 characters</span></label><input type="password" id="myPwNew" autocomplete="new-password"></div>
+      <div><label for="myPwNew2">Repeat the new password</label><input type="password" id="myPwNew2" autocomplete="new-password"></div>
+    </div>
+    <div class="row"><button class="primary" onclick="changeMyPassword()">Change</button></div>
+    <div class="msg" id="myPwMsg"></div>
+    <p class="hint" style="margin-top:12px">Your other devices are logged out when the password changes.</p>
+  </div>
+  <div class="row"><a href="/logout">Log out</a></div>
 </section>
 
 <section id="history">
@@ -562,6 +614,9 @@ const TOKEN = "{{TOKEN}}";
 let PROFILE = "";
 try { PROFILE = localStorage.getItem("profile") || ""; } catch {}
 const REMOTE = {{REMOTE}};
+const ME = {{ME}};
+const IS_USER = ME.role === "user";
+if (IS_USER) document.body.classList.add("role-user");
 const FR = {{FR}};
 let UI = "{{UI_LANG}}";
 let settings = null, statusData = null, runTimer = null;
@@ -663,6 +718,8 @@ function show() {
   if (id === "prefs") loadPrefs();
   if (id === "run") pollRun();
   if (id === "phone") loadRemote();
+  if (id === "users") loadUsers();
+  if (id === "account") $("meName").textContent = ME.username || "";
   if (window.innerWidth < 760) window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", show);
@@ -670,6 +727,9 @@ window.addEventListener("hashchange", show);
 // ---------- settings ----------
 async function loadSettings() {
   settings = await api("/api/settings");
+  if (IS_USER && !settings.profiles.length) {
+    $("noAlerts").hidden = false; $("profileSel").innerHTML = ""; return;
+  }
   for (const [k, v] of Object.entries(settings.values)) if ($(k) && $(k).type !== "checkbox" && !["AI_PROVIDER"].includes(k)) $(k).value = v;
   const on = (k, dflt) => { const v = (settings.values[k] || "").toLowerCase(); return v ? ["1", "true", "yes", "on"].includes(v) : dflt; };
   $("FINN_FETCH_PAGES").checked = on("FINN_FETCH_PAGES", false);
@@ -692,7 +752,15 @@ async function loadSettings() {
   $("areaCounties").value = a.counties.map(title).join(", ");
   if (settings.profile !== PROFILE) { PROFILE = settings.profile; try { localStorage.setItem("profile", PROFILE); } catch {} }
   $("profileSel").innerHTML = settings.profiles.map(x => `<option value="${esc(x.id)}" ${x.id === PROFILE ? "selected" : ""}>${esc(x.name)}${x.issue ? " ⚠" : ""}</option>`).join("") +
-    `<option value="__new">${esc(tr("+ New profile…"))}</option>`;
+    (IS_USER ? "" : `<option value="__new">${esc(tr("+ New profile…"))}</option>`);
+  $("PROFILE_NAME").readOnly = IS_USER;
+  if (IS_USER) {
+    const bot = settings.bots[0], token = settings.secrets_set.TELEGRAM_BOT_TOKEN, chat = settings.values.TELEGRAM_CHAT_ID;
+    $("botMine").textContent = bot ? tr("Bot: {name}", { name: bot.name || bot.id }) : tr("This profile has no Telegram bot yet: add yours.");
+    $("newBotBtn").hidden = !!bot;
+    $("tgCard1").hidden = !bot || token;
+    $("tgCard2").hidden = !bot || !!chat;
+  }
   $("deleteProfileBtn").disabled = settings.profiles.length < 2;
   $("BOT").innerHTML = `<option value="">${esc(tr("(none)"))}</option>` + settings.bots.map(b =>
     `<option value="${esc(b.id)}" ${b.id === settings.values.BOT ? "selected" : ""}>${esc(b.name || b.id)}${b.token_set ? "" : " " + esc(tr("(no token)"))}</option>`).join("");
@@ -998,6 +1066,7 @@ function li(state, what, text, link) {
 async function refreshStatus() {
   try { statusData = await api("/api/status"); } catch (e) { $("checks").innerHTML = li("bad", tr("Dashboard"), esc(e.message)); return; }
   const s = statusData, c = s.claude;
+  if (IS_USER) return renderUserOverview(s);
   const claudeLine = !c.installed ? ["bad", tr("Not installed")] : !c.logged_in ? ["bad", tr("Installed, not logged in")] :
     (c.days_left != null && c.days_left < 5) ? ["warn", tr("Logged in, expires in {n} day(s)", { n: c.days_left })] :
     ["ok", c.days_left != null ? tr("Logged in, expires in {n} days", { n: c.days_left }) : tr("Logged in")];
@@ -1034,6 +1103,81 @@ async function refreshStatus() {
   // Show the chosen AI first; the other card stays available below.
   const ai = $("ai"), first = s.ai.provider === "gemini" ? $("geminiCard") : $("claudeCard");
   ai.insertBefore(first, ai.querySelector(".card").nextSibling);
+}
+
+function renderUserOverview(s) {
+  const tg = s.telegram.token && s.telegram.chat_id ? ["ok", tr("Set up")] : s.telegram.token ? ["warn", tr("Token saved, chat id missing")] : ["bad", tr("Not set up")];
+  const prof = !s.profile.exists ? ["bad", tr("Missing")] : s.profile.is_template ? ["warn", tr("Still the template")] : ["ok", tr("Filled in")];
+  const mine = s.schedule && s.schedule.profiles.find(x => x.id === PROFILE);
+  const sched = mine && mine.scheduled ? ["ok", tr("Messages every day at {time}, next {next}", { time: esc(mine.time), next: esc(mine.next) })] : ["warn", tr("No scheduled run")];
+  $("checks").innerHTML =
+    li(s.name ? "ok" : "warn", tr("Name"), s.name ? tr("Set") : tr("Not set"), "search") +
+    li(prof[0], tr("Profile"), prof[1], "search") +
+    li(tg[0], "Telegram", tg[1], "telegram") +
+    li(sched[0], tr("Schedule"), sched[1], "schedule");
+  const d = s.db || {};
+  const statsHtml = [["ads", "ads seen"], ["sorted", "sorted"], ["relevant", "relevant"], ["sent", "sent"], ["kept", "kept"], ["rejected", "rejected"]]
+    .map(([k, l]) => `<div class="stat"><b>${d[k] ?? 0}</b><span>${tr(l)}</span></div>`).join("");
+  $("stats").innerHTML = statsHtml; $("stats2").innerHTML = statsHtml;
+}
+
+// ---------- users (admin) ----------
+async function loadUsers() {
+  try {
+    const r = await api("/api/users");
+    const boxes = (prefix, chosen) => r.profiles.map(p => `<label><input type="checkbox" data-${prefix} value="${esc(p.id)}" ${chosen.includes(p.id) ? "checked" : ""}> ${esc(p.name)}</label>`).join("");
+    $("newUserProfiles").innerHTML = boxes("new", []);
+    $("userList").innerHTML = !r.users.length ? `<p class="hint">${tr("No user yet.")}</p>` : r.users.map(u => `
+      <div class="userrow" data-user="${esc(u.id)}">
+        <div class="who notr">${esc(u.username)}</div>
+        <div class="muni notr">${boxes("u-" + esc(u.id), u.profiles)}</div>
+        <div class="row" style="margin-top:6px">
+          <button class="primary" onclick="saveUserAlerts('${esc(u.id)}')">${tr("Save alerts")}</button>
+          <button onclick="resetUserPassword('${esc(u.id)}', '${esc(u.username)}')">${tr("New password")}</button>
+          <button onclick="deleteUser('${esc(u.id)}', '${esc(u.username)}')">${tr("Delete")}</button>
+        </div>
+      </div>`).join("");
+  } catch (e) { $("userList").textContent = e.message; }
+}
+const checkedIds = attr => [...document.querySelectorAll(`input[${attr}]:checked`)].map(c => c.value);
+async function createUser() {
+  const btn = event.target;
+  await busy(btn, async () => {
+    try {
+      await api("/api/users", { username: $("newUserName").value, password: $("newUserPw").value, profiles: checkedIds("data-new") });
+      msg("newUserMsg", "ok", tr("User {name} created: give them the address, their username and this password.", { name: $("newUserName").value.trim().toLowerCase() }));
+      $("newUserName").value = $("newUserPw").value = "";
+      loadUsers();
+    } catch (e) { msg("newUserMsg", "bad", e.message); }
+  });
+}
+async function saveUserAlerts(id) {
+  try { await api("/api/users/update", { id, profiles: checkedIds(`data-u-${id}`) }); msg("usersMsg", "ok", tr("Saved.")); }
+  catch (e) { msg("usersMsg", "bad", e.message); }
+}
+async function resetUserPassword(id, name) {
+  const pw = prompt(tr("New password for {name} (at least 12 characters):", { name }));
+  if (!pw) return;
+  try { await api("/api/users/update", { id, password: pw }); msg("usersMsg", "ok", tr("Password changed: {name} is logged out everywhere.", { name })); }
+  catch (e) { msg("usersMsg", "bad", e.message); }
+}
+async function deleteUser(id, name) {
+  if (!confirm(tr('Delete the user "{name}"? Their alerts stay; only the account goes.', { name }))) return;
+  try { await api("/api/users/delete", { id }); loadUsers(); msg("usersMsg", "ok", tr("User deleted.")); }
+  catch (e) { msg("usersMsg", "bad", e.message); }
+}
+
+// ---------- my account (user) ----------
+async function changeMyPassword() {
+  const btn = event.target;
+  await busy(btn, async () => {
+    try {
+      if ($("myPwNew").value !== $("myPwNew2").value) throw new Error(tr("The two passwords are different."));
+      await api("/api/account", { current: $("myPwOld").value, new: $("myPwNew").value });
+      $("myPwOld").value = $("myPwNew").value = $("myPwNew2").value = "";
+      msg("myPwMsg", "ok", tr("Password changed."));
+    } catch (e) { msg("myPwMsg", "bad", e.message); }
+  });
 }
 
 // ---------- phone access ----------

@@ -18,4 +18,5 @@ __pycache__/
 
 # Profiles (one per candidate): settings, profile texts and preferences
 profiles.json
+users.json
 profiles/
