@@ -33,13 +33,19 @@ class Bot:
     name: str = ""
     chat_id: str = ""
     token_env: str = ""
+    owner: str = ""  # "" = the admin's bot; otherwise the id of the user who added it
+
+    @property
+    def admin_owned(self) -> bool:
+        return not self.owner or self.owner == "admin"
 
     @property
     def token(self) -> str:
         return os.getenv(self.token_env, "").strip()
 
     def public(self) -> dict:
-        return dict(id=self.id, name=self.name, chat_id=self.chat_id, token_set=bool(self.token))
+        return dict(id=self.id, name=self.name, chat_id=self.chat_id, token_set=bool(self.token),
+                    owner=self.owner or "admin")
 
 
 @dataclass

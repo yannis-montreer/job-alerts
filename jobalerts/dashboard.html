@@ -536,6 +536,11 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
     <div class="msg" id="newUserMsg"></div>
     <p class="hint" style="margin-top:12px">You log in as "admin" with your own password. Each login is reported on Telegram.</p>
   </div>
+  <div class="card">
+    <h3>Telegram bots</h3>
+    <p class="hint">Which bot sends which alerts, and whose it is. "Admin" bots are yours; a user's bot is one they added to their own alert. Login notices go to the first admin bot that is set up.</p>
+    <div id="botOverview">Loading…</div>
+  </div>
 </section>
 
 <section id="account">
@@ -1122,7 +1127,24 @@ function renderUserOverview(s) {
 }
 
 // ---------- users (admin) ----------
+async function loadBotOverview() {
+  try {
+    const r = await api("/api/bots/overview");
+    const state = b => !b.token ? ["bad", tr("no token")] : !b.chat ? ["warn", tr("no chat")] : b.listening ? ["ok", tr("listening")] : ["warn", tr("set up, not listening")];
+    $("botOverview").innerHTML = (!r.bots.length ? `<p class="hint">${tr("No bot yet.")}</p>` :
+      `<table><tr><th>${tr("Bot")}</th><th>${tr("Owner")}</th><th>${tr("Alerts")}</th><th>${tr("Users")}</th><th>${tr("State")}</th></tr>` + r.bots.map(b => {
+        const [dot, text] = state(b);
+        return `<tr><td><b class="notr">${esc(b.name)}</b>${b.handle ? `<br><span class="hint notr">@${esc(b.handle)}</span>` : ""}${b.notices ? `<br><span class="badge keep">${tr("login notices")}</span>` : ""}</td>` +
+          `<td>${b.admin ? `<span class="badge keep">${tr("Admin")}</span>` : `<span class="badge none notr">${esc(b.owner)}</span>`}</td>` +
+          `<td class="notr">${b.profiles.map(p => esc(p.name)).join(", ") || `<span class="hint">${tr("none")}</span>`}</td>` +
+          `<td class="notr">${b.users.map(esc).join(", ") || `<span class="hint">${tr("only you")}</span>`}</td>` +
+          `<td><span class="dot ${dot}" style="display:inline-block"></span> ${text}</td></tr>`;
+      }).join("") + "</table>") +
+      (r.no_bot.length ? `<p class="hint" style="margin-top:10px">${tr("Alerts without a bot: {list}", { list: r.no_bot.map(p => esc(p.name)).join(", ") })}</p>` : "");
+  } catch (e) { $("botOverview").textContent = e.message; }
+}
 async function loadUsers() {
+  loadBotOverview();
   try {
     const r = await api("/api/users");
     const boxes = (prefix, chosen) => r.profiles.map(p => `<label><input type="checkbox" data-${prefix} value="${esc(p.id)}" ${chosen.includes(p.id) ? "checked" : ""}> ${esc(p.name)}</label>`).join("");

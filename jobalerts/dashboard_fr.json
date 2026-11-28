@@ -432,5 +432,18 @@
   "Password changed: {name} is logged out everywhere.": "Mot de passe changé : {name} est déconnecté partout.",
   "Delete the user \"{name}\"? Their alerts stay; only the account goes.": "Supprimer l'utilisateur « {name} » ? Ses alertes restent ; seul le compte disparaît.",
   "User deleted.": "Utilisateur supprimé.",
-  "Password changed.": "Mot de passe changé."
+  "Password changed.": "Mot de passe changé.",
+  "Telegram bots": "Bots Telegram",
+  "Which bot sends which alerts, and whose it is. \"Admin\" bots are yours; a user's bot is one they added to their own alert. Login notices go to the first admin bot that is set up.": "Quel bot envoie quelles alertes, et à qui il appartient. Les bots « Admin » sont les tiens ; le bot d'un utilisateur est celui qu'il a ajouté à sa propre alerte. Les avis de connexion vont au premier bot admin configuré.",
+  "no token": "pas de token",
+  "no chat": "pas de chat",
+  "listening": "à l'écoute",
+  "set up, not listening": "configuré, pas à l'écoute",
+  "No bot yet.": "Aucun bot pour l'instant.",
+  "Owner": "Propriétaire",
+  "State": "État",
+  "login notices": "avis de connexion",
+  "Admin": "Admin",
+  "only you": "toi seul",
+  "Alerts without a bot: {list}": "Alertes sans bot : {list}"
 }

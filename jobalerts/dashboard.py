@@ -230,11 +230,16 @@ def _headers(resp):
     return resp
 
 
+def notice_bots() -> list:
+    """The admin's bots that can receive security notices (the first one is used)."""
+    return [b for b in profiles.all_bots() if b.admin_owned and b.token and str(b.chat_id).strip()]
+
+
 def alert_owner(text: str):
     """A short security notice on Telegram (first bot), in the background; never fails."""
     def send():
         try:
-            bots = [b for b in profiles.all_bots() if b.token and b.chat_id]
+            bots = notice_bots()
             if bots:
                 telegram.api("sendMessage", bot=bots[0], chat_id=bots[0].chat_id, text=text)
         except Exception:
@@ -722,7 +727,8 @@ def create_bot():
     if is_user() and profiles.get_bot(profiles.current().bot):
         raise UserError("This profile already has a bot: only the admin can change it")
     data = profiles.load()
-    bot = profiles.Bot(id=profiles.next_id("b", data["bots"]), name=name)
+    bot = profiles.Bot(id=profiles.next_id("b", data["bots"]), name=name,
+                       owner=g.account["id"] if is_user() else "")
     bot.token_env = f"BOT_{bot.id.upper()}_TOKEN"
     data["bots"].append(bot)
     pid = profiles.current().id
@@ -1308,6 +1314,38 @@ def change_my_password():
         raise UserError(str(e)) from None
     session["auth"] = _fingerprint(u.password_hash)  # stay logged in here; other devices are logged out
     return jsonify(ok=True)
+
+
+@app.get("/api/bots/overview")
+def bots_overview():
+    """Every Telegram bot: who owns it, its state, its profiles and the users of those profiles."""
+    all_users = users.load()
+    names = {u.id: u.username for u in all_users}
+    notices = (notice_bots() or [None])[0]
+    con = db.connect()
+    try:
+        rows = []
+        for b in profiles.all_bots():
+            used_by = profiles.profiles_of(b)
+            ids = {p.id for p in used_by}
+            handle = ""
+            if b.token:
+                try:
+                    handle = telegram.api("getMe", _timeout=5, bot=b).get("username") or ""
+                except Exception:
+                    handle = ""
+            rows.append(dict(
+                id=b.id, name=b.name or b.id, handle=handle,
+                owner="admin" if b.admin_owned else names.get(b.owner, b.owner),
+                admin=b.admin_owned, token=bool(b.token), chat=bool(str(b.chat_id).strip()),
+                listening=listener.active(con, b.id), notices=bool(notices and notices.id == b.id),
+                profiles=[dict(id=p.id, name=p.name or p.id) for p in used_by],
+                users=sorted({u.username for u in all_users if ids & set(u.profile_ids())}),
+            ))
+    finally:
+        con.close()
+    no_bot = [dict(id=p.id, name=p.name or p.id) for p in profiles.all_profiles() if not profiles.get_bot(p.bot)]
+    return jsonify(ok=True, bots=rows, no_bot=no_bot)
 
 
 @app.get("/api/users")

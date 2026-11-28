@@ -467,3 +467,20 @@ def test_the_admin_logs_in_as_admin_and_old_sessions_stay_admin(remote):
     with remote.session_transaction(base_url=REMOTE) as sess:  # a session from before users existed
         sess.pop("uid")
     assert remote.get("/api/users", base_url=REMOTE, headers=H).status_code == 200
+
+
+def test_bot_overview_shows_owner_alerts_and_users(two_alerts, monkeypatch):
+    from jobalerts import telegram
+    monkeypatch.setattr(telegram, "api", lambda method, _timeout=30, bot=None, **p: {"username": f"{bot.id}_bot"})
+    c = two_alerts
+    c.post("/api/bots", base_url=REMOTE, headers=H, json={"name": "Kari's bot"})  # as the user kari
+    c.post("/api/settings", base_url=REMOTE, headers=H, json={"TELEGRAM_BOT_TOKEN": "222:kari", "TELEGRAM_CHAT_ID": "77"})
+    assert c.get("/api/bots/overview", base_url=REMOTE, headers=H).status_code == 403  # not for users
+    r = c.get("/api/bots/overview", base_url=BASE, headers=H).get_json()
+    by = {b["name"]: b for b in r["bots"]}
+    admin, mine = by["b1"], by["Kari's bot"]
+    assert admin["admin"] and admin["owner"] == "admin" and admin["notices"] and admin["users"] == []
+    assert [p["id"] for p in admin["profiles"]] == ["p1"] and admin["handle"] == "b1_bot"
+    assert not mine["admin"] and mine["owner"] == "kari" and not mine["notices"]
+    assert [p["id"] for p in mine["profiles"]] == ["p2"] and mine["users"] == ["kari"] and r["no_bot"] == []
+    assert [b.id for b in dashboard.notice_bots()] == ["b1"]  # never a user's bot
