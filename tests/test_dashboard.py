@@ -361,3 +361,11 @@ def test_task_kinds_from_arguments(monkeypatch):
         {"name": "c", "args": "-m jobalerts.run"}]))
     from conftest import REAL_LIST_TASKS
     assert [(t["kind"], t["profile"]) for t in REAL_LIST_TASKS()] == [("profile", "p2"), ("catch-up", None), ("full run", None)]
+
+
+def test_history_shows_the_one_line_summary(client, con):
+    from conftest import add_ad
+    add_ad(con, "h1", score=4, summary="B2B sales role close to the profile.", sent_at="2026-11-28T06:35:00")
+    add_ad(con, "h2", score=5, summary="Not sent yet.")
+    rows = client.get("/api/history", base_url=BASE, headers=H).get_json()["rows"]
+    assert [(r["uuid"], r["summary"]) for r in rows] == [("h1", "B2B sales role close to the profile.")]

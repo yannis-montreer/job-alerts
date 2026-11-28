@@ -47,6 +47,7 @@ button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 button:disabled { opacity: .5; cursor: default; }
 .docbtn { padding: 3px 9px; font-size: 13px; margin: 1px 0; }
+.summary { font-size: 13px; margin-top: 4px; max-width: 46em; }
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .checks { list-style: none; padding: 0; margin: 0; }
@@ -1095,7 +1096,8 @@ async function loadHistory() {
     const rows = (await api("/api/history")).rows;
     $("historyTable").innerHTML = !rows.length ? `<p>${tr("No ad sent yet.")}</p>` :
       `<table><tr><th>${tr("Ad")}</th><th>${tr("Place")}</th><th>${tr("Score")}</th><th>${tr("Sent")}</th><th>${tr("Decision")}</th><th>${tr("Comments")}</th><th>${tr("Documents")}</th></tr>` + rows.map(r =>
-        `<tr class="notr"><td><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a><br><span class="hint">${esc(r.employer)} · ${esc(r.source)}${r.norwegian_required ? " · " + tr("Norwegian required") : ""}</span></td>` +
+        `<tr class="notr"><td><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a><br><span class="hint">${esc(r.employer)} · ${esc(r.source)}${r.norwegian_required ? " · " + tr("Norwegian required") : ""}</span>` +
+        (r.summary ? `<div class="summary">${esc(r.summary)}</div>` : "") + `</td>` +
         `<td>${esc(title(r.municipal || ""))}</td><td>${esc(r.score)}/5</td><td>${esc((r.sent_at || "").slice(0, 10))}</td>` +
         `<td>${decisionBadge(r.decision)}</td><td>${esc(r.notes || "")}</td>` +
         `<td>${(r.docs || []).map(n => `<button class="docbtn" data-uuid="${esc(r.uuid)}" data-name="${esc(n)}">${n.startsWith("CV") ? tr("CV") : tr("Letter")}</button>`).join(" ")}</td></tr>`).join("") + "</table>";

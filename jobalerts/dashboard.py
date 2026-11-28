@@ -1101,7 +1101,7 @@ def run_state():
 def history():
     con = db.connect()
     rows = con.execute(
-        "SELECT a.uuid, a.title, a.employer, a.municipal, m.score, a.source, a.url, m.sent_at, m.norwegian_required, "
+        "SELECT a.uuid, a.title, a.employer, a.municipal, m.score, m.summary, a.source, a.url, m.sent_at, m.norwegian_required, "
         "(SELECT decision FROM decisions WHERE uuid=a.uuid AND profile_id=:p ORDER BY id DESC LIMIT 1) AS decision, "
         "(SELECT group_concat(text, ' / ') FROM notes WHERE uuid=a.uuid AND profile_id=:p) AS notes "
         "FROM matches m JOIN ads a ON a.uuid=m.uuid WHERE m.profile_id=:p AND m.sent_at IS NOT NULL "
