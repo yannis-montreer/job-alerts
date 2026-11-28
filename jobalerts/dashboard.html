@@ -380,8 +380,10 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
     <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="SOURCE_FINN"> Use Finn alert emails</label>
     <label for="GMAIL_FINN_LABEL">Gmail label of this profile's Finn alerts <span class="hint">optional; empty = INBOX. Give each profile its own label when their Finn searches differ.</span></label>
     <input type="text" id="GMAIL_FINN_LABEL">
+    <label for="FINN_SUBJECT">Subject of this profile's Finn alert emails <span class="hint">only the emails whose subject contains this text, e.g. "Nye annonser: Job alert Anna". Empty = every Finn alert.</span></label>
+    <input type="text" id="FINN_SUBJECT" maxlength="120">
     <div class="row">
-      <button class="primary" onclick="saveSources(['SOURCE_FINN','GMAIL_FINN_LABEL'], 'finnMsg')">Save</button>
+      <button class="primary" onclick="saveSources(['SOURCE_FINN','GMAIL_FINN_LABEL','FINN_SUBJECT'], 'finnMsg')">Save</button>
       <button onclick="testGmail()">Check Finn alerts</button>
     </div>
     <div class="msg" id="finnMsg"></div>
@@ -836,6 +838,7 @@ async function testGmail() {
     try {
       const r = (await api("/api/gmail/test", {})).result;
       msg("finnMsg", "ok", tr("Connected ({mailbox}). Last {days} days: {emails} Finn alert email(s), {ads} ad(s), {in_area} in your area.", r) +
+        (r.subject ? " " + tr("{other} other Finn alert email(s) skipped (another subject).", r) : "") +
         (r.emails ? "" : " " + tr("No Finn alert yet: check that the alert is sent to this address.")));
     } catch (e) { msg("finnMsg", "bad", e.message); }
   });

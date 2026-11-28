@@ -52,8 +52,8 @@ def test_finn_ads_go_to_the_profiles_of_their_mailbox_and_area(con, two, monkeyp
 
     def texts(sender, box, since):
         boxes.append(box)
-        return [ALERT_A] if box == "INBOX" else [ALERT_B]
-    monkeypatch.setattr(mail, "alert_texts", texts)
+        return [("Nye annonser: x", ALERT_A)] if box == "INBOX" else [("Nye annonser: y", ALERT_B)]
+    monkeypatch.setattr(mail, "alert_messages", texts)
     finn.fetch_new_ads(con)
     assert sorted(boxes) == ["INBOX", "finn-anna"]
     got = {(r["profile_id"], r["uuid"]) for r in con.execute("SELECT * FROM matches")}
@@ -211,3 +211,22 @@ def test_full_runs_wait_for_each_other(tmp_path, monkeypatch):
     worker("b")
     a.join()
     assert order == ["a-in", "a-out", "b-in", "b-out"]
+
+
+def test_finn_emails_are_split_by_their_subject(con, two, monkeypatch):
+    """Both profiles read the same inbox; each takes only its own alert, by subject."""
+    data = profiles.load()
+    data["profiles"][1].finn_label = ""
+    data["profiles"][0].finn_subject = "Nye annonser: Alex Job Alert"
+    data["profiles"][1].finn_subject = "job alert anna"  # case and spaces do not matter
+    profiles.save(data)
+    monkeypatch.setattr(mail, "alert_messages", lambda sender, box, since: [
+        ("Nye annonser: Alex Job Alert", ALERT_A), ("Nye annonser:  Job alert Anna", ALERT_B),
+        ("Nye annonser: someone else", ALERT_A)])
+    _, stats = finn.fetch_new_ads(con)
+    got = {(r["profile_id"], r["uuid"]) for r in con.execute("SELECT * FROM matches")}
+    # Alex's alert has 111 only; Anna's alert has 111 and 222
+    assert got == {("p1", "finn:111"), ("p2", "finn:111"), ("p2", "finn:222")}
+    assert (stats["emails"], stats["other_alerts"]) == (2, 1)
+    assert not profiles.get("p1").wants_finn_email("Nye annonser: Job alert Anna")
+    assert profiles.Profile(id="p9").wants_finn_email("anything")  # no filter: every alert

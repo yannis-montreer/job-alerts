@@ -55,6 +55,7 @@ class Profile:
     counties: list = field(default_factory=list)
     finn_label: str = ""
     linkedin_label: str = ""
+    finn_subject: str = ""      # only the Finn alert emails whose subject contains this ("" = all)
     bot: str = DEFAULT_BOT_ID
     send_time: str = ""         # "HH:MM" the profile's ads are sent every day ("" = not set yet)
     profile_file: str = ""      # relative to the project folder
@@ -83,6 +84,11 @@ class Profile:
     @property
     def finn_mailbox(self) -> str:
         return self.finn_label.strip() or "INBOX"
+
+    def wants_finn_email(self, subject: str) -> bool:
+        """This profile's Finn alert, by its subject (e.g. "Nye annonser: Job alert Anna")."""
+        f = " ".join(self.finn_subject.split()).casefold()
+        return not f or f in " ".join((subject or "").split()).casefold()
 
     @property
     def linkedin_mailbox(self) -> str:

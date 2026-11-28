@@ -65,7 +65,7 @@ PLAIN_KEYS = {"CANDIDATE_NAME", "LANGUAGE", "TELEGRAM_CHAT_ID", "GMAIL_ADDRESS",
               "SOURCE_NAV", "SOURCE_FINN", "SOURCE_LINKEDIN", "GMAIL_LINKEDIN_LABEL", "DASHBOARD_LANGUAGE"}
 # Settings of the selected profile (profiles.json) or of its bot, not of .env.
 PROFILE_KEYS = {"CANDIDATE_NAME", "LANGUAGE", "MESSAGE_MIN_SCORE", "DIGEST_MIN_SCORE", "NORWEGIAN_REQUIRED",
-                "GMAIL_FINN_LABEL", "GMAIL_LINKEDIN_LABEL", "TELEGRAM_CHAT_ID", "PROFILE_NAME", "BOT", "BOT_NAME"}
+                "GMAIL_FINN_LABEL", "FINN_SUBJECT", "GMAIL_LINKEDIN_LABEL", "TELEGRAM_CHAT_ID", "PROFILE_NAME", "BOT", "BOT_NAME"}
 BOOL_KEYS = {"FINN_FETCH_PAGES", "SOURCE_NAV", "SOURCE_FINN", "SOURCE_LINKEDIN"}
 AREA_GROUPS = {
     "Oslo": ["OSLO"],
@@ -418,7 +418,7 @@ def get_settings():
     values = {k: env.get(k, "") for k in PLAIN_KEYS}
     values.update(CANDIDATE_NAME=p.candidate, LANGUAGE=p.language, MESSAGE_MIN_SCORE=str(p.message_min),
                   DIGEST_MIN_SCORE=str(p.digest_min), NORWEGIAN_REQUIRED=p.norwegian,
-                  GMAIL_FINN_LABEL=p.finn_label, GMAIL_LINKEDIN_LABEL=p.linkedin_label,
+                  GMAIL_FINN_LABEL=p.finn_label, FINN_SUBJECT=p.finn_subject, GMAIL_LINKEDIN_LABEL=p.linkedin_label,
                   TELEGRAM_CHAT_ID=bot.chat_id if bot else "", PROFILE_NAME=p.name, BOT=p.bot,
                   BOT_NAME=bot.name if bot else "")
     secrets_set = {k: bool(env.get(k)) for k in SECRET_KEYS}
@@ -509,7 +509,7 @@ def save_profile_settings(changes: dict, token: str | None, area) -> list:
             raise UserError("Another profile already has this name")
         p.name = name
     fields = dict(CANDIDATE_NAME="candidate", LANGUAGE="language", NORWEGIAN_REQUIRED="norwegian",
-                  GMAIL_FINN_LABEL="finn_label", GMAIL_LINKEDIN_LABEL="linkedin_label")
+                  GMAIL_FINN_LABEL="finn_label", FINN_SUBJECT="finn_subject", GMAIL_LINKEDIN_LABEL="linkedin_label")
     for key, attr in fields.items():
         if key in changes:
             setattr(p, attr, changes.pop(key))

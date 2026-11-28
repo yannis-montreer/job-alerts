@@ -61,10 +61,11 @@ def check_connection(days: int = 14, profile=None) -> dict:
     """Setup check: count Finn alert emails and ads of the last `days` days, for a profile."""
     p = profile or profiles.current()
     box = p.finn_mailbox
-    texts = mail.alert_texts(ALERT_SENDER, box, mail.days_ago(days))
+    found = mail.alert_messages(ALERT_SENDER, box, mail.days_ago(days))
+    texts = [text for subject, text in found if p.wants_finn_email(subject)]
     ads = [ad for text in texts for ad in parse_alert_text(text)]
-    return dict(mailbox=box, days=days, emails=len(texts), ads=len(ads),
-                in_area=sum(in_target(ad["location"], p) for ad in ads))
+    return dict(mailbox=box, days=days, emails=len(texts), other=len(found) - len(texts), ads=len(ads),
+                in_area=sum(in_target(ad["location"], p) for ad in ads), subject=p.finn_subject)
 
 
 def fetch_new_ads(con, profile_list=None):
@@ -76,17 +77,20 @@ def fetch_new_ads(con, profile_list=None):
     if not mail.credentials():
         log.info("Finn: GMAIL_ADDRESS / GMAIL_APP_PASSWORD not set, source skipped")
         return [], {}
-    stats = dict(emails=0, ads=0, out_of_area=0, seen=0, new=0)
+    stats = dict(emails=0, other_alerts=0, ads=0, out_of_area=0, seen=0, new=0)
     new_ads = []
     for box, group in mail.by_mailbox(profile_list or profiles.all_profiles(), "finn_mailbox").items():
         key = f"finn_last_success:{box}"
-        texts = mail.alert_texts(ALERT_SENDER, box, mail.since_for(con, key, "finn_last_success"))
-        stats["emails"] += len(texts)
-        for text in texts:
+        for subject, text in mail.alert_messages(ALERT_SENDER, box, mail.since_for(con, key, "finn_last_success")):
+            readers = [p for p in group if p.wants_finn_email(subject)]  # whose alert this is
+            if not readers:
+                stats["other_alerts"] += 1
+                continue
+            stats["emails"] += 1
             for ad in parse_alert_text(text):
                 stats["ads"] += 1
                 uuid = f"finn:{ad['code']}"
-                wanted = [p for p in group if in_target(ad["location"], p)]
+                wanted = [p for p in readers if in_target(ad["location"], p)]
                 if db.is_seen(con, uuid):
                     stats["seen"] += 1
                     for p in wanted:

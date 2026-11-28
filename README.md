@@ -26,6 +26,10 @@ then token and chat as in step 4).
 - Sources are fetched once a day for everyone; each ad goes to the profiles whose area it is in
   (and, for Finn and LinkedIn, whose Gmail label it came from). An ad that suits two profiles is
   sent to both.
+- Several profiles can share one inbox for Finn: give each Finn alert its own name, then enter it
+  in the profile's **Subject of this profile's Finn alert emails** (Sources page), e.g.
+  `Nye annonser: Job alert Anna`. A profile then reads only the alert emails whose subject
+  contains that text (case does not matter); empty means every Finn alert.
 - Each profile is sorted with its own AI call, so the AI usage grows with the number of profiles.
 - Clicks, replies and application kits belong to the profile whose message they answer: one
   person's choices never teach another person's sorting.
@@ -197,7 +201,8 @@ read your clicks before the script does.
    to your Gmail address.
 2. In your Google account, turn on 2-step verification and create an **app password**.
 3. Put the address and the app password in `GMAIL_ADDRESS` and `GMAIL_APP_PASSWORD`.
-   Optionally, filter the alerts into a Gmail label and set `GMAIL_FINN_LABEL`.
+   Optionally, filter the alerts into a Gmail label and set `GMAIL_FINN_LABEL`, or give each
+   profile the subject of its own alert emails (see Profiles above).
 
 The script reads only emails from `agent@finn.no`, in read-only mode. By default it **does not
 download any finn.no page**: Finn's terms and robots.txt forbid automated access without written

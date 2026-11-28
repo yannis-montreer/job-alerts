@@ -5,6 +5,7 @@ import os
 import re
 from datetime import datetime, timedelta, timezone
 from email import message_from_bytes
+from email.header import decode_header, make_header
 
 from . import db, profiles
 
@@ -38,8 +39,20 @@ def text_of(msg) -> str:
     return ""
 
 
+def subject_of(msg) -> str:
+    try:
+        return str(make_header(decode_header(msg.get("Subject", ""))))
+    except Exception:
+        return str(msg.get("Subject", ""))
+
+
 def alert_texts(sender: str, box: str, since: str) -> list[str]:
     """Plain-text bodies of the emails from `sender` since `since`, read-only."""
+    return [text for _, text in alert_messages(sender, box, since)]
+
+
+def alert_messages(sender: str, box: str, since: str) -> list[tuple[str, str]]:
+    """(subject, plain-text body) of the emails from `sender` since `since`, read-only."""
     creds = credentials()
     if not creds:
         raise RuntimeError("GMAIL_ADDRESS and GMAIL_APP_PASSWORD must both be set")
@@ -56,7 +69,8 @@ def alert_texts(sender: str, box: str, since: str) -> list[str]:
         texts = []
         for num in data[0].split():
             typ, msgdata = m.fetch(num, "(BODY.PEEK[])")
-            texts.append(text_of(message_from_bytes(msgdata[0][1])))
+            msg = message_from_bytes(msgdata[0][1])
+            texts.append((subject_of(msg), text_of(msg)))
         return texts
     finally:
         try:
