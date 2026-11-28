@@ -81,6 +81,7 @@ code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size:
 #toast { position: fixed; right: 20px; bottom: 20px; padding: 10px 16px; border-radius: 8px; background: var(--text); color: var(--bg); opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 420px; }
 #toast.show { opacity: .95; }
 nav h1 { display: flex; align-items: center; gap: 8px; }
+@media (max-width: 760px) { nav h1 { display: contents; } nav h1 > span { order: 1; font-size: 16px; font-weight: 700; white-space: nowrap; } .langbtn { order: 3; margin-left: 0; } }
 .langbtn { margin-left: auto; padding: 2px 8px; font-size: 13px; border-radius: 12px; }
 .langmenu { position: absolute; z-index: 10; left: 12px; top: 54px; width: 250px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.18); }
 .langmenu[hidden] { display: none; }
@@ -93,12 +94,29 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
 .profilepick label { margin: 0 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
 .profilepick select { padding: 6px 8px; font-weight: 600; }
 .ptag { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 10px; background: var(--code); color: var(--muted); margin-left: 6px; vertical-align: middle; }
+.tabbar, .menulist .phoneonly { display: none; }
+.menulist { display: grid; gap: 8px; }
+.menulist a { display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; color: var(--text); text-decoration: none; font-weight: 600; }
+.menulist a .ic { font-size: 20px; width: 26px; text-align: center; }
+.menulist a .sub { display: block; font-weight: 400; font-size: 13px; color: var(--muted); }
+.menulist a::after { content: "›"; margin-left: auto; color: var(--muted); font-size: 20px; }
+.menulist a[hidden] { display: none; }
 @media (max-width: 760px) {
   .layout { flex-direction: column; }
-  nav { width: auto; height: auto; position: static; border-right: 0; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 4px; padding: 10px 16px; }
-  nav h1 { width: 100%; margin: 0 0 6px; }
-  .profilepick { width: 100%; margin: 0 0 6px; }
-  main { padding: 16px; }
+  nav { width: auto; height: auto; position: sticky; top: 0; border-right: 0; border-bottom: 1px solid var(--line); display: flex; flex-wrap: nowrap; align-items: center; gap: 10px; padding: 8px 16px; }
+  nav > a { display: none !important; }
+  nav h1 { margin: 0; font-size: 16px; flex: none; }
+  .profilepick { flex: 1; min-width: 0; margin: 0; order: 2; }
+  .profilepick label { display: none; }
+  .langmenu { left: auto; right: 12px; top: 50px; }
+  main { padding: 16px 16px calc(84px + env(safe-area-inset-bottom)); }
+  .tabbar { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 8; background: var(--panel); border-top: 1px solid var(--line); padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); }
+  .tabbar a { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 2px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 12px; font-weight: 600; }
+  .tabbar a .ic { font-size: 20px; line-height: 1.1; filter: grayscale(1); opacity: .75; }
+  .tabbar a.active { color: var(--accent); }
+  .tabbar a.active .ic { filter: none; opacity: 1; }
+  .menulist .phoneonly { display: flex; }
+  #toast { left: 16px; right: 16px; bottom: calc(76px + env(safe-area-inset-bottom)); max-width: none; }
   .grid2 { grid-template-columns: 1fr; }
   table { display: block; overflow-x: auto; }
   nav a { padding: 5px 9px; font-size: 14px; }
@@ -144,7 +162,28 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
   <a href="#phone">Phone access</a>
   <a href="/logout" id="logoutLink" hidden>Log out</a>
 </nav>
+<div class="tabbar" id="tabbar">
+  <a href="#overview" data-tabs="overview"><span class="ic notr">🏠</span><span>Overview</span></a>
+  <a href="#history" data-tabs="history"><span class="ic notr">📋</span><span>History</span></a>
+  <a href="#run" data-tabs="run"><span class="ic notr">▶️</span><span>Run now</span></a>
+  <a href="#menu" data-tabs="menu prefs search sources telegram ai schedule phone"><span class="ic notr">☰</span><span>Menu</span></a>
+</div>
 <main>
+
+<section id="menu">
+  <h2>Menu</h2>
+  <p class="lead">Settings and setup of the chosen profile.</p>
+  <div class="menulist">
+    <a href="#prefs"><span class="ic notr">🎯</span><span>Preferences<span class="sub">Roles wanted, to avoid, deal-breakers</span></span></a>
+    <a href="#search"><span class="ic notr">👤</span><span>Profile &amp; area<span class="sub">Profile text, CV, places</span></span></a>
+    <a href="#sources"><span class="ic notr">📥</span><span>Sources<span class="sub">NAV, Finn, LinkedIn</span></span></a>
+    <a href="#telegram"><span class="ic notr">💬</span><span>Output (Telegram)<span class="sub">Bot, chat, scores</span></span></a>
+    <a href="#ai"><span class="ic notr">🤖</span><span>AI (Claude / Gemini)<span class="sub">Which AI sorts the ads</span></span></a>
+    <a href="#schedule"><span class="ic notr">⏰</span><span>Schedule<span class="sub">Time of the daily message</span></span></a>
+    <a href="#phone"><span class="ic notr">📱</span><span>Phone access<span class="sub">Tailscale, password, home screen</span></span></a>
+    <a href="/logout" id="menuLogout" class="phoneonly" hidden><span class="ic notr">🚪</span><span>Log out</span></a>
+  </div>
+</section>
 
 <section id="overview">
   <h2>Overview</h2>
@@ -616,6 +655,7 @@ function show() {
   const id = (location.hash || "#overview").slice(1);
   document.querySelectorAll("section").forEach(s => s.classList.toggle("active", s.id === id));
   document.querySelectorAll("nav a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#" + id));
+  document.querySelectorAll(".tabbar a").forEach(a => a.classList.toggle("active", a.dataset.tabs.split(" ").includes(id)));
   if (id === "overview" || id === "ai") refreshStatus();
   if (id === "schedule") loadSchedule();
   if (id === "history") loadHistory();
@@ -979,7 +1019,7 @@ async function refreshStatus() {
       : li(claudeLine[0], tr("AI: Claude"), claudeLine[1], "ai")) +
     li(s.sources.nav || s.sources.finn || s.sources.linkedin ? "ok" : "bad", tr("Sources"), sourcesLine(s), "sources") +
     li(sched[0], tr("Schedule"), sched[1], "schedule") +
-    li("ok", tr("Language"), esc(tr("Telegram alerts in {tg}, dashboard in {ui} (🌐 button at the top left)", { tg: langName(alerts), ui: langName(UI) }))) +
+    li("ok", tr("Language"), esc(tr("Telegram alerts in {tg}, dashboard in {ui} (🌐 button at the top)", { tg: langName(alerts), ui: langName(UI) }))) +
     li(s.remote.host && s.remote.password_set && s.remote.service ? "ok" : "off", tr("Phone access"),
        s.remote.host && s.remote.password_set && s.remote.service ? esc(s.remote.url) : tr("Not set up (optional)"), "phone");
   const d = s.db || {};
@@ -1109,6 +1149,7 @@ async function loadHistory() {
 
 $("profile").addEventListener("input", () => { profileEdited = true; });
 $("logoutLink").hidden = !REMOTE;
+$("menuLogout").hidden = !REMOTE;
 if (REMOTE && "serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 translatePage();
 loadSettings().catch(e => toast(e.message));

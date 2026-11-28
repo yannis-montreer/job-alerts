@@ -181,7 +181,7 @@ def test_every_dashboard_text_has_a_french_translation():
     names = {"Claude", "Gemini", "Gmail", "LinkedIn", "Finn.no", "finn.no", "NAV / Arbeidsplassen", "Telegram",
              "@BotFather", "/newbot", "bot", "Google AI Studio", "gemini-flash-latest", "English", "Français",
              "EN", "🌐", ".", "…", "2", "3", "4", "5"}
-    missing = [s for s in dict.fromkeys(found) if s not in fr and s not in names]
+    missing = [s for s in dict.fromkeys(found) if s not in fr and s not in names and re.search(r"[^\W\d_]", s)]  # icons need none
     script = src[src.index("<script>"):]
     missing += [s for s in re.findall(r'\btr\("((?:[^"\\]|\\.)*)"', script) + re.findall(r"\btr\('((?:[^'\\]|\\.)*)'", script)
                 if s.replace('\\"', '"') not in fr]
