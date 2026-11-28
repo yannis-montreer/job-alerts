@@ -269,7 +269,7 @@ def test_remote_login_flow(remote):
     assert page.status_code == 200 and b"const REMOTE = true" in page.data
     assert remote.get("/api/settings", base_url=REMOTE, headers=H).status_code == 200
     # a new password logs the phone out
-    remote.post("/api/remote", base_url=BASE, headers=H, json={"password": "another one"})
+    remote.post("/api/remote", base_url=BASE, headers=H, json={"password": "another one!!"})
     assert remote.get("/", base_url=REMOTE).status_code == 302
 
 
@@ -281,7 +281,7 @@ def test_login_is_throttled(remote):
 
 
 @pytest.mark.parametrize("body, error", [
-    ({"password": "short"}, "8 characters"),
+    ({"password": "short"}, "12 characters"),
     ({"host": "not a host"}, "looks wrong"),
     ({"host": "localhost"}, "Tailscale address"),
 ])
@@ -369,3 +369,19 @@ def test_history_shows_the_one_line_summary(client, con):
     add_ad(con, "h2", score=5, summary="Not sent yet.")
     rows = client.get("/api/history", base_url=BASE, headers=H).get_json()["rows"]
     assert [(r["uuid"], r["summary"]) for r in rows] == [("h1", "B2B sales role close to the profile.")]
+
+
+def test_remote_logins_and_lockouts_are_reported(remote, monkeypatch):
+    ALERTS = []
+    monkeypatch.setattr(dashboard, "alert_owner", ALERTS.append)
+    dashboard.ensure_secret_key()  # done by main() at start
+    remote.post("/api/remote", base_url=BASE, headers=H, json={"password": "correct horse"})
+    r = remote.post("/login", base_url=REMOTE, data={"password": "correct horse"},
+                    headers={"X-Forwarded-For": "203.0.113.7"})
+    assert r.status_code == 302, r.data[:300]
+    assert len(ALERTS) == 1 and "new login from 203.0.113.7" in ALERTS[0]
+    for _ in range(5):
+        remote.post("/login", base_url=REMOTE, data={"password": "nope nope"})
+    assert len(ALERTS) == 2 and "5 wrong passwords" in ALERTS[1]
+    r = remote.get("/login", base_url=REMOTE)
+    assert r.headers["Strict-Transport-Security"].startswith("max-age=")

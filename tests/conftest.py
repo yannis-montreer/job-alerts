@@ -63,6 +63,7 @@ def no_windows_tasks(monkeypatch):
         raise AssertionError("a test tried to run PowerShell")
     monkeypatch.setattr(dashboard, "powershell", blocked)
     monkeypatch.setattr(dashboard, "list_tasks", lambda: [])
+    monkeypatch.setattr(dashboard, "alert_owner", lambda text: None)  # never a real Telegram message
 
 
 @pytest.fixture

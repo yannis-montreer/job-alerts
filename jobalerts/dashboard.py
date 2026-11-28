@@ -13,8 +13,10 @@ websites open in your browser cannot use it.
 
 Phone access: `tailscale serve` forwards https://<your-pc>.<tailnet>.ts.net:<port> to it. That
 host name must be set as DASHBOARD_REMOTE_HOST, and requests that come through it need a
-login with the dashboard password (a session cookie, 30 days). Never use Tailscale Funnel
-for the dashboard: Funnel makes it public.
+login with the dashboard password (a session cookie, 30 days). The same host can also be put on
+Tailscale Funnel (public, e.g. port 10000): then the password is the only lock, so it must be
+long; every remote login and every lock-out is reported on Telegram, and the always-on mode is
+served by waitress rather than Flask's development server.
 """
 import argparse
 import base64
@@ -54,6 +56,7 @@ PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 DEFAULT_PORT = 8765
 SERVICE_PORT = 8787  # always-on mode; DASHBOARD_PORT in .env overrides it
 STATIC = Path(__file__).with_name("static")
+MIN_PASSWORD = 12  # the dashboard may be public (Tailscale Funnel)
 PUBLIC_PATHS = {"/login", "/manifest.webmanifest", "/sw.js", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"}
 TAILSCALE = [shutil.which("tailscale") or r"C:\Program Files\Tailscale\tailscale.exe"]
 
@@ -165,7 +168,27 @@ def _headers(resp):
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["Referrer-Policy"] = "no-referrer"
     resp.headers["Content-Security-Policy"] = "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"
+    if is_remote():
+        resp.headers["Strict-Transport-Security"] = "max-age=31536000"
     return resp
+
+
+def alert_owner(text: str):
+    """A short security notice on Telegram (first bot), in the background; never fails."""
+    def send():
+        try:
+            bots = [b for b in profiles.all_bots() if b.token and b.chat_id]
+            if bots:
+                telegram.api("sendMessage", bot=bots[0], chat_id=bots[0].chat_id, text=text)
+        except Exception:
+            pass
+    threading.Thread(target=send, daemon=True).start()
+
+
+def _client() -> str:
+    """Where a remote request comes from, as told by Tailscale (Funnel/Serve set this header)."""
+    return (request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+            or request.headers.get("Tailscale-User-Login", "") or "unknown")
 
 
 class UserError(Exception):
@@ -746,8 +769,13 @@ def login():
         session.clear()
         session.permanent = True
         session["auth"] = _fingerprint(h)
+        alert_owner(f"🔐 Dashboard: new login from {_client()} ({datetime.now():%d.%m %H:%M}). "
+                    "Not you? Change the dashboard password (Phone access page), or turn the public access off.")
         return redirect("/")
     _login_failures.append(now)
+    if len(_login_failures) == 5:
+        alert_owner(f"⚠️ Dashboard: 5 wrong passwords in 10 minutes (last from {_client()}). "
+                    "Logins are paused for 10 minutes.")
     time.sleep(1)
     return _login_page(tx["wrong"] if h else "", 401)
 
@@ -802,8 +830,8 @@ def save_remote():
         updates["DASHBOARD_REMOTE_HOST"] = host
     if body.get("password"):
         pw = str(body["password"])
-        if len(pw) < 8:
-            raise UserError("The password needs at least 8 characters")
+        if len(pw) < MIN_PASSWORD:
+            raise UserError("The password needs at least 12 characters")
         updates["DASHBOARD_PASSWORD_HASH"] = base64.urlsafe_b64encode(generate_password_hash(pw).encode()).decode()
     if not updates:
         raise UserError("Nothing to save")
@@ -823,7 +851,7 @@ def start_service():
 
 @app.post("/api/remote/serve")
 def tailscale_serve():
-    """Share the always-on dashboard on this computer's Tailscale address (Serve: private, never Funnel)."""
+    """Share the always-on dashboard on this computer's Tailscale address (Serve: private to the tailnet)."""
     port = service_port()
     try:
         proc = subprocess.run(TAILSCALE + ["serve", "--bg", f"--https={port}", f"http://127.0.0.1:{port}"],
@@ -1170,6 +1198,14 @@ def main(argv=None) -> int:
         print(f"Job alerts dashboard: {url}\nKeep this window open while you use it; close it to stop.")
         if not args.no_browser:
             threading.Timer(1.0, webbrowser.open, (url,)).start()
+    ensure_secret_key()  # Flask opens the session before any request handler runs
+    if args.service:
+        try:
+            from waitress import serve  # sturdier than Flask's development server when public
+            serve(app, host="127.0.0.1", port=PORT, threads=8, ident="")
+            return 0
+        except ImportError:
+            print("waitress not installed: using Flask's server (pip install -r requirements.txt)")
     app.run(host="127.0.0.1", port=PORT, debug=False, use_reloader=False)
     return 0
 

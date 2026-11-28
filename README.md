@@ -141,11 +141,17 @@ If [Tailscale](https://tailscale.com/) runs on this computer and on your phone, 
    `setup_dashboard_task.ps1`) runs the dashboard in the background from logon, on
    `127.0.0.1:8787` (`DASHBOARD_PORT`).
 2. **Tailscale address and password:** your computer's Tailscale name (filled in for you) and a
-   password of at least 8 characters, stored as a hash. The phone asks for it once, then
+   password of at least 12 characters, stored as a hash. The phone asks for it once, then
    remembers it for 30 days. Changing it logs every phone out.
 3. **Turn on Tailscale Serve:** runs `tailscale serve --bg --https=8787 http://127.0.0.1:8787`,
    which makes `https://<your-pc>.<tailnet>.ts.net:8787/` reachable from your own Tailscale
-   devices only. **Never use Tailscale Funnel for the dashboard**: Funnel makes it public.
+   devices only.
+4. **Optional, public access (no Tailscale app on the phone):** `tailscale funnel --bg --https=10000 8787`
+   puts the same dashboard on `https://<your-pc>.<tailnet>.ts.net:10000/` for anyone on the
+   internet (Funnel allows only ports 443, 8443 and 10000). The login page is then public and the
+   password is the only lock, so use a long, unique one. Each remote login and each lock-out
+   (5 wrong passwords in 10 minutes) is reported on Telegram; the always-on dashboard is served by
+   waitress. Turn it off with `tailscale funnel --https=10000 off`.
 
 Then open that address on the phone, log in, and add it to the home screen (Chrome: menu ⋮ →
 *Add to Home screen* or *Install app*; Safari: Share → *Add to Home Screen*). It opens full

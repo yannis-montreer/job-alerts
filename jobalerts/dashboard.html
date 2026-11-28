@@ -528,7 +528,7 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
     <p class="hint">This computer's name on your Tailscale network. Only your own Tailscale devices can open it.</p>
     <label for="remoteHost">Tailscale address</label>
     <input type="text" id="remoteHost" autocomplete="off" placeholder="my-pc.tail1234.ts.net">
-    <p class="hint">The password is asked once on the phone, then remembered for 30 days. At least 8 characters. Changing it logs every phone out.</p>
+    <p class="hint">The password is asked once on the phone, then remembered for 30 days. At least 12 characters. Changing it logs every phone out.</p>
     <div class="grid2">
       <div><label for="remotePw">New password <span class="hint" id="remotePwState"></span></label><input type="password" id="remotePw" autocomplete="new-password" placeholder="leave empty to keep the current value"></div>
       <div><label for="remotePw2">Repeat the password</label><input type="password" id="remotePw2" autocomplete="new-password"></div>
@@ -538,7 +538,8 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
   </div>
   <div class="card">
     <h3>3. Share it on Tailscale</h3>
-    <p class="hint">Runs Tailscale Serve for the dashboard's port: private to your Tailscale devices. Never put the dashboard on Tailscale Funnel, which makes a service public on the internet.</p>
+    <p class="hint">Runs Tailscale Serve for the dashboard's port: private to your Tailscale devices.</p>
+    <p class="hint">Public access without the Tailscale app is possible with Tailscale Funnel (port 10000). Then anyone can reach the login page and the password is the only lock: use a long one. Each login and each lock-out is reported on Telegram. To stop it: tailscale funnel --https=10000 off</p>
     <div class="row"><button class="primary" onclick="startServe()">Turn on Tailscale Serve</button></div>
     <div class="msg" id="serveMsg"></div>
   </div>
