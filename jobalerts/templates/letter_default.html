@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ cv.name }} - cover letter</title>
+<style>
+@page { size: A4; margin: 0; }
+* { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+:root { --accent: #c49a6c; --text: #2b2b2b; --muted: #6b6b6b; --line: #d9cfc3; }
+body { margin: 0; font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: var(--text); font-size: 10.5pt; line-height: 1.55; }
+.page { padding: 15mm 20mm; }
+header { display: flex; align-items: center; gap: 8mm; padding-bottom: 6mm; border-bottom: 1px solid var(--line); margin-bottom: 10mm; }
+.photo { width: 26mm; height: 26mm; border-radius: 50%; object-fit: cover; flex: none; }
+h1 { margin: 0; font-size: 22pt; letter-spacing: .18em; font-weight: 700; text-transform: uppercase; }
+.headline { color: var(--accent); font-size: 12pt; margin: 1mm 0 2mm; }
+.contact { display: flex; flex-wrap: wrap; gap: 2mm 8mm; color: var(--muted); font-size: 9pt; }
+.meta { margin-bottom: 8mm; }
+.meta .to { font-weight: 700; }
+.subject { color: var(--accent); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; margin: 6mm 0 6mm; }
+p { margin: 0 0 4mm; text-align: justify; white-space: pre-line; }
+</style>
+</head>
+<body><div class="page">
+<header>
+  {% if photo %}<img class="photo" src="{{ photo }}" alt="">{% endif %}
+  <div>
+    <h1>{{ cv.name }}</h1>
+    {% if cv.headline %}<div class="headline">{{ cv.headline }}</div>{% endif %}
+    <div class="contact">
+      {% if cv.email %}<span>✉ {{ cv.email }}</span>{% endif %}
+      {% if cv.phone %}<span>☏ {{ cv.phone }}</span>{% endif %}
+      {% if cv.location %}<span>⌖ {{ cv.location }}</span>{% endif %}
+    </div>
+  </div>
+</header>
+<div class="meta">
+  <div class="to">{{ letter.employer }}</div>
+  <div>{{ cv.location }}{% if cv.location %}, {% endif %}{{ letter.date }}</div>
+  <div class="subject">Application – {{ letter.job_title }}</div>
+</div>
+{% for p in letter.paragraphs %}<p>{{ p }}</p>{% endfor %}
+</div></body>
+</html>

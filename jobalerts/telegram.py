@@ -10,7 +10,9 @@ profiles ("k:<ad>") count for the bot's first profile.
 Find your chat_id: write to your bot, then  python -m jobalerts.telegram --whoami
 """
 import html
+import json
 import logging
+import os
 import sys
 
 import requests
@@ -155,6 +157,23 @@ def _send_digest(con, lines, ads) -> int:
         link_preview_options={"is_disabled": True})
     _mark_sent(con, p, [a["uuid"] for a in ads])
     return len(ads)
+
+
+def send_document(path, caption: str = "", bot=None, reply: dict | None = None):
+    """Send a file (e.g. a PDF): the user can open it and save it from Telegram."""
+    b = _bot(bot)
+    if not b.token:
+        raise RuntimeError(f"Telegram token missing for bot {b.name or b.id} (dashboard, Output)")
+    data = {"chat_id": str(chat_id(b)), "caption": caption}
+    if reply:
+        data["reply_parameters"] = json.dumps(reply)
+    with open(path, "rb") as fh:
+        r = requests.post(API.format(token=b.token, method="sendDocument"), data=data,
+                          files={"document": (os.path.basename(path), fh, "application/pdf")}, timeout=120)
+    result = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    if not result.get("ok"):
+        raise RuntimeError(f"Telegram sendDocument: {result.get('description') or r.status_code}")
+    return result["result"]
 
 
 def send_text(text: str, bot=None):

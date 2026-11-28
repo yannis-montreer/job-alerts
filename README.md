@@ -65,6 +65,14 @@ next morning) sends an **application kit** as a reply to the ad: deadline, conta
 key requirements, gaps to prepare for, points to highlight, and a draft cover letter to copy and
 adapt. It is one extra AI call per kept ad, written only from the ad and your profile.
 
+**CV and cover letter as PDFs.** Upload the CV of each profile in the dashboard (*Profile & area →
+CV*, PDF or Word). The tool reads its facts once and, for a PDF, has the AI copy its layout (colours,
+columns, photo) into a template; check it with *Preview PDF*. After each Keep, it also sends a CV
+adapted to the job (in English, using only facts from the uploaded CV) and the cover letter, both as
+PDFs in that layout, ready to attach to the application; they can also be downloaded from History.
+PDFs are made on this computer with Microsoft Edge (headless, scripts off). The CV, its photo and the
+ad are sent to your AI provider to do this.
+
 If Telegram clicks or messages ever go missing (another program using the same bot token, or
 clicks older than 24 h while the computer was off), the tool notices the gap in Telegram's
 numbering and warns you on Telegram.
@@ -263,6 +271,7 @@ same minute wait for each other, so new ads are fetched once.
 | `setup_dashboard_task.ps1` | Always-on dashboard task, for phone access |
 | `schedule_task.ps1` | One daily task (used by the Schedule page: one per profile, backup click check) |
 | `jobalerts/kit.py` | Application kit sent after a Keep click |
+| `jobalerts/cvdocs.py`, `templates/` | CV upload, layout copy, adapted CV and letter PDFs |
 | `jobalerts/listener.py` | Always-on Telegram listener (runs in the always-on dashboard) |
 | `jobalerts/static/` | App icons for the phone |
 | `tests/` | Unit tests (no network, no secrets) |

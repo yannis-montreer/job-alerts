@@ -40,7 +40,7 @@ from dotenv import dotenv_values, load_dotenv
 from flask import Flask, abort, jsonify, redirect, request, send_file, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from . import config, db, finn, linkedin, listener, preferences, profiles, telegram, texts, triage
+from . import config, cvdocs, db, finn, linkedin, listener, preferences, profiles, telegram, texts, triage
 
 ROOT = config.ROOT
 ENV_PATH = ROOT / ".env"
@@ -76,7 +76,7 @@ DEFAULT_MUNICIPALITIES = {"OSLO"} | config.AKERSHUS | config.NEARBY
 DEFAULT_COUNTIES = {"OSLO", "AKERSHUS"}
 
 app = Flask(__name__)
-app.config.update(SESSION_COOKIE_NAME="jobalerts_session", SESSION_COOKIE_SECURE=True, SESSION_COOKIE_HTTPONLY=True,
+app.config.update(MAX_CONTENT_LENGTH=12 * 1024 * 1024, SESSION_COOKIE_NAME="jobalerts_session", SESSION_COOKIE_SECURE=True, SESSION_COOKIE_HTTPONLY=True,
                   SESSION_COOKIE_SAMESITE="Lax", PERMANENT_SESSION_LIFETIME=timedelta(days=30))
 TOKEN = secrets.token_urlsafe(24)
 _login_failures: list[float] = []
@@ -867,6 +867,78 @@ def icon():
     return send_file(STATIC / name, mimetype="image/png")
 
 
+# ---------- CV and application documents ----------
+
+@app.get("/api/cv")
+def cv_state():
+    return jsonify(ok=True, **cvdocs.state())
+
+
+@app.post("/api/cv/upload")
+def cv_upload():
+    """Store the selected profile's CV, then read its facts (one AI call, about a minute)."""
+    f = request.files.get("file")
+    if f is None or not f.filename:
+        raise UserError("Choose a PDF or Word file first")
+    try:
+        info = cvdocs.save_upload(f.filename, f.read())
+    except ValueError as e:
+        raise UserError(str(e)) from None
+    cvdocs.build_facts()
+    return jsonify(ok=True, photo=info["photo"], **cvdocs.state())
+
+
+@app.post("/api/cv/facts")
+def cv_facts():
+    if cvdocs.original() is None:
+        raise UserError("Upload a CV first")
+    cvdocs.build_facts()
+    return jsonify(ok=True, **cvdocs.state())
+
+
+@app.post("/api/cv/layout")
+def cv_layout():
+    """The AI looks at the uploaded PDF and writes a layout copying it (a few minutes)."""
+    try:
+        cvdocs.build_template()
+    except ValueError as e:
+        raise UserError(str(e)) from None
+    return jsonify(ok=True, **cvdocs.state())
+
+
+@app.post("/api/cv/layout/reset")
+def cv_layout_reset():
+    cvdocs.reset_template()
+    return jsonify(ok=True, **cvdocs.state())
+
+
+@app.get("/api/cv/preview")
+def cv_preview():
+    try:
+        pdf = cvdocs.preview()
+    except ValueError as e:
+        raise UserError(str(e)) from None
+    return send_file(pdf, mimetype="application/pdf", as_attachment=True, download_name="CV preview.pdf")
+
+
+@app.get("/api/cv/original")
+def cv_original():
+    src = cvdocs.original()
+    if src is None:
+        raise UserError("No CV uploaded")
+    return send_file(src, as_attachment=True, download_name=cvdocs.state()["filename"] or src.name)
+
+
+@app.get("/api/applications/file")
+def application_file():
+    """A PDF made for a kept ad (adapted CV or cover letter), for the selected profile."""
+    uuid, name = request.args.get("uuid", ""), request.args.get("name", "")
+    match = [p for p in cvdocs.documents(uuid=uuid) if p.name == name]
+    if not match:
+        raise UserError("Document not found")
+    return send_file(match[0], mimetype="application/pdf", as_attachment=True, download_name=match[0].name)
+
+
 @app.post("/api/gmail/test")
 def gmail_test():
     reload_settings()
@@ -1037,7 +1109,12 @@ def history():
         {"p": profiles.current().id},
     ).fetchall()
     con.close()
-    return jsonify(ok=True, rows=[dict(r) for r in rows])
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["docs"] = [p.name for p in cvdocs.documents(uuid=r["uuid"])]
+        out.append(d)
+    return jsonify(ok=True, rows=out)
 
 
 def _free_port(preferred: int) -> int:

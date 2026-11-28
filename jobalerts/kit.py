@@ -9,7 +9,7 @@ import html
 import json
 import logging
 
-from . import db, preferences, profiles, telegram, triage
+from . import cvdocs, db, preferences, profiles, telegram, triage
 from .texts import language_name, t
 
 log = logging.getLogger(__name__)
@@ -58,17 +58,20 @@ Application link: {application_url}
 
 
 def pending(con) -> list:
-    """The current profile's ads whose latest decision is keep and whose kit is not sent yet."""
+    """The current profile's kept ads whose kit, or whose CV and letter PDFs (when a CV is
+    uploaded), are not sent yet."""
     pid = profiles.current().id
+    docs = 1 if cvdocs.ready() else 0
     return con.execute(
         """SELECT a.* FROM ads a
            JOIN decisions d ON d.uuid = a.uuid AND d.profile_id = ?
            LEFT JOIN kits k ON k.uuid = a.uuid AND k.profile_id = d.profile_id
            WHERE d.id = (SELECT MAX(id) FROM decisions WHERE uuid = a.uuid AND profile_id = d.profile_id)
              AND d.decision = 'keep'
-             AND (k.uuid IS NULL OR (k.sent_at IS NULL AND k.attempts < ?))
+             AND (k.uuid IS NULL OR (k.sent_at IS NULL AND k.attempts < ?)
+                  OR (? AND k.sent_at IS NOT NULL AND k.docs_at IS NULL AND k.docs_attempts < ?))
            ORDER BY d.id""",
-        (pid, MAX_ATTEMPTS),
+        (pid, MAX_ATTEMPTS, docs, MAX_ATTEMPTS),
     ).fetchall()
 
 
@@ -125,6 +128,9 @@ def send_kits(con) -> int:
         uuid = ad["uuid"]
         key = (p.id, uuid)
         con.execute("INSERT OR IGNORE INTO kits(profile_id, uuid) VALUES(?, ?)", key)
+        if con.execute("SELECT sent_at FROM kits WHERE profile_id=? AND uuid=?", key).fetchone()["sent_at"]:
+            send_documents(con, p, ad)  # text kit already sent: only the PDFs are left
+            continue
         con.execute("UPDATE kits SET attempts = attempts + 1 WHERE profile_id=? AND uuid=?", key)
         con.commit()
         try:
@@ -145,6 +151,8 @@ def send_kits(con) -> int:
             con.commit()
             sent += 1
             log.info("Application kit sent (%s): %s", p.name or p.id, ad["title"])
+            if cvdocs.ready(p):
+                send_documents(con, p, ad)
         except Exception as e:
             err = str(e)[:500]
             con.execute("UPDATE kits SET error=? WHERE profile_id=? AND uuid=?", (err, *key))
@@ -157,3 +165,36 @@ def send_kits(con) -> int:
                 except Exception:
                     pass
     return sent
+
+
+def send_documents(con, p, ad) -> bool:
+    """The adapted CV and the cover letter as PDFs, as a reply to the ad. Failures are retried
+    at the next runs (3 tries), then reported once; the text kit is never sent again."""
+    key = (p.id, ad["uuid"])
+    con.execute("UPDATE kits SET docs_attempts = docs_attempts + 1 WHERE profile_id=? AND uuid=?", key)
+    con.commit()
+    try:
+        row = con.execute("SELECT content FROM kits WHERE profile_id=? AND uuid=?", key).fetchone()
+        letter = (json.loads(row["content"]) if row["content"] else {}).get("cover_letter", "")
+        bot = profiles.bot_of(p)
+        files = cvdocs.make_documents(ad, letter, p)
+        reply = _reply_to(con, bot.id, p.id, ad["uuid"])
+        for kind in ("cv", "letter"):
+            if kind in files:
+                telegram.send_document(files[kind], t("doc_" + kind), bot=bot, reply=reply)
+        con.execute("UPDATE kits SET docs_at=?, docs_error=NULL WHERE profile_id=? AND uuid=?", (db.now_iso(), *key))
+        con.commit()
+        log.info("CV and letter PDFs sent (%s): %s", p.name or p.id, ad["title"])
+        return True
+    except Exception as e:
+        err = str(e)[:500]
+        con.execute("UPDATE kits SET docs_error=? WHERE profile_id=? AND uuid=?", (err, *key))
+        con.commit()
+        log.error("CV / letter PDFs failed for %s: %s", ad["title"], err)
+        attempts = con.execute("SELECT docs_attempts FROM kits WHERE profile_id=? AND uuid=?", key).fetchone()[0]
+        if attempts >= MAX_ATTEMPTS:
+            try:
+                telegram.send_text(t("docs_failed", title=ad["title"] or "", err=err[:300]))
+            except Exception:
+                pass
+        return False

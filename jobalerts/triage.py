@@ -119,21 +119,30 @@ def call_claude(prompt: str) -> list[dict]:
     return claude_json(prompt, SCHEMA)["results"]
 
 
-def claude_json(prompt: str, schema: dict) -> dict:
-    """One claude -p call that returns an object matching the JSON schema."""
+def claude_json(prompt: str, schema: dict, pdf=None) -> dict:
+    """One claude -p call that returns an object matching the JSON schema.
+    pdf: a PDF file the AI may look at (read-only Read tool, in a folder holding only that file)."""
     if not CLAUDE_EXE.exists():
         raise RuntimeError(f"claude.exe not found: {CLAUDE_EXE}")
     cmd = [
         str(CLAUDE_EXE), "-p",
         "--output-format", "json",
         "--json-schema", json.dumps(schema),
-        "--tools", "",
+        "--tools", "Read" if pdf else "",
+        *(["--allowedTools", "Read"] if pdf else []),
         "--no-session-persistence",
         "--disable-slash-commands",
     ]
     # No API key: force the subscription login.
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
     workdir = config.ROOT / "data"
+    if pdf:  # only this file in the folder the AI can read
+        import shutil
+        workdir = config.ROOT / "data" / "ai-pdf"
+        shutil.rmtree(workdir, ignore_errors=True)
+        workdir.mkdir(parents=True)
+        shutil.copyfile(pdf, workdir / "document.pdf")
+        prompt = "The document is the file document.pdf in the current folder: read it (all pages) first.\n\n" + prompt
     workdir.mkdir(parents=True, exist_ok=True)
     proc = subprocess.run(
         cmd, input=prompt, capture_output=True, text=True, encoding="utf-8",
@@ -188,10 +197,16 @@ def call_gemini(prompt: str) -> list[dict]:
     return gemini_json(prompt, SCHEMA)["results"]
 
 
-def gemini_json(prompt: str, schema: dict) -> dict:
-    """One Gemini call that returns an object matching the JSON schema."""
+def gemini_json(prompt: str, schema: dict, pdf=None) -> dict:
+    """One Gemini call that returns an object matching the JSON schema (pdf: a PDF file to look at)."""
     url = f"{GEMINI_BASE}/models/{config.GEMINI_MODEL}:generateContent"
-    contents = [{"role": "user", "parts": [{"text": prompt}]}]
+    parts = [{"text": prompt}]
+    if pdf:
+        import base64
+        from pathlib import Path
+        parts.insert(0, {"inlineData": {"mimeType": "application/pdf",
+                                        "data": base64.b64encode(Path(pdf).read_bytes()).decode()}})
+    contents = [{"role": "user", "parts": parts}]
     # Current REST format, then the older field names if this API version rejects it.
     configs = [
         {"responseFormat": {"text": {"mimeType": "APPLICATION_JSON", "schema": schema}}},
@@ -229,13 +244,14 @@ def call_ai(prompt: str) -> list[dict]:
     return call_claude(prompt)
 
 
-def ai_json(prompt: str, schema: dict) -> dict:
-    """Any other structured AI call (e.g. the application kit), with the configured provider."""
+def ai_json(prompt: str, schema: dict, pdf=None) -> dict:
+    """Any other structured AI call (application kit, CV...), with the configured provider.
+    pdf: path of a PDF the AI should look at (layout, photo...)."""
     if config.AI_PROVIDER == "gemini":
-        return gemini_json(prompt, schema)
+        return gemini_json(prompt, schema, pdf=pdf)
     if config.AI_PROVIDER != "claude":
         raise RuntimeError(f"Unknown AI_PROVIDER: {config.AI_PROVIDER} (use claude or gemini)")
-    return claude_json(prompt, schema)
+    return claude_json(prompt, schema, pdf=pdf)
 
 
 def triage(con) -> int:

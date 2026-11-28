@@ -70,6 +70,9 @@ CREATE TABLE IF NOT EXISTS kits (
     error TEXT,
     content TEXT,
     sent_at TEXT,
+    docs_attempts INTEGER NOT NULL DEFAULT 0,
+    docs_at TEXT,
+    docs_error TEXT,
     PRIMARY KEY (profile_id, uuid)
 );
 """
@@ -129,6 +132,10 @@ def connect() -> sqlite3.Connection:
     con.executescript(SCHEMA)
     _migrate_connection(con)
     con.executescript(DECISIONS)
+    cols = _columns(con, "kits")
+    for col, decl in (("docs_attempts", "INTEGER NOT NULL DEFAULT 0"), ("docs_at", "TEXT"), ("docs_error", "TEXT")):
+        if col not in cols:
+            con.execute(f"ALTER TABLE kits ADD COLUMN {col} {decl}")
     return con
 
 

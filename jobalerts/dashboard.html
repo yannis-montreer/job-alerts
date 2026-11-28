@@ -46,6 +46,7 @@ textarea { min-height: 420px; font: 13px/1.5 ui-monospace, Consolas, monospace; 
 button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 button:disabled { opacity: .5; cursor: default; }
+.docbtn { padding: 3px 9px; font-size: 13px; margin: 1px 0; }
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .checks { list-style: none; padding: 0; margin: 0; }
@@ -231,6 +232,20 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
     <textarea id="profile" spellcheck="true"></textarea>
     <div class="row"><button class="primary" onclick="saveProfile()">Save profile</button></div>
     <div class="msg" id="profileMsg"></div>
+  </div>
+  <div class="card">
+    <h3>CV</h3>
+    <p class="hint">Upload the CV (PDF, or Word .docx). It stays on this computer. After each Keep, the bot sends this CV adapted to the job (in English, only facts from this CV) and the cover letter, as PDFs in the CV's own layout.</p>
+    <ul class="checks" id="cvState"><li>Loading…</li></ul>
+    <div class="row"><input type="file" id="cvFile" accept=".pdf,.docx" style="flex:1;min-width:200px"><button class="primary" onclick="uploadCv()">Upload</button></div>
+    <div class="row">
+      <button onclick="cvAction('layout')">Copy the layout of this CV</button>
+      <button onclick="cvAction('reset')">Use the default layout</button>
+      <button onclick="cvAction('facts')">Read the CV again</button>
+      <button onclick="downloadFile('/api/cv/preview', 'CV preview.pdf', 'cvMsg')">Preview PDF</button>
+      <button onclick="downloadFile('/api/cv/original', '', 'cvMsg')">Download the uploaded CV</button>
+    </div>
+    <div class="msg" id="cvMsg"></div>
   </div>
 </section>
 
@@ -712,6 +727,7 @@ async function saveFields(keys, msgId) {
 
 // ---------- profile ----------
 async function loadProfile() {
+  loadCv();
   const p = await api("/api/profile");
   if (!$("profile").value || !profileEdited) $("profile").value = p.text;
   $("profileFrom").textContent = p.from_template ? tr("This is the template: replace the examples, then save.") : "";
@@ -723,6 +739,67 @@ async function saveProfile() {
     try { await api("/api/profile", { text: $("profile").value }); profileEdited = false; msg("profileMsg", "ok", tr("Profile saved.")); $("profileFrom").textContent = ""; }
     catch (e) { msg("profileMsg", "bad", e.message); }
   });
+}
+
+// ---------- CV ----------
+async function loadCv() {
+  try {
+    const c = await api("/api/cv");
+    $("cvState").innerHTML = !c.uploaded ? li("off", tr("CV"), tr("Not uploaded yet")) :
+      li("ok", tr("CV"), `<span class="notr">${esc(c.filename)}</span>` + (c.uploaded_at ? " · " + esc(c.uploaded_at.slice(0, 10)) : "")) +
+      li(c.facts ? "ok" : "warn", tr("Facts"), c.facts ? tr("{name}, {n} job(s)", { name: esc(c.name), n: c.jobs }) : tr("Not read yet: click Read the CV again")) +
+      li(c.photo ? "ok" : "off", tr("Photo"), c.photo ? tr("Found in the CV") : tr("None")) +
+      li(c.template === "custom" ? "ok" : "off", tr("Layout"), c.template === "custom" ? tr("Copied from the CV") : tr("Default layout")) +
+      li(c.edge ? "ok" : "bad", tr("PDF maker"), c.edge ? tr("Microsoft Edge found") : tr("Microsoft Edge or Chrome is needed"));
+  } catch (e) { $("cvState").innerHTML = li("bad", tr("CV"), esc(e.message)); }
+}
+async function apiForm(path, form) {
+  const r = await fetch(path, { method: "POST", headers: { "X-Token": TOKEN, "X-Profile": PROFILE }, body: form });
+  let data; try { data = await r.json(); } catch { throw new Error("HTTP " + r.status); }
+  if (!data.ok) throw new Error(data.error || ("HTTP " + r.status));
+  return data;
+}
+async function uploadCv() {
+  const btn = event.target, f = $("cvFile").files[0];
+  if (!f) { msg("cvMsg", "bad", tr("Choose a PDF or Word file first.")); return; }
+  await busy(btn, async () => {
+    try {
+      const form = new FormData(); form.append("file", f);
+      msg("cvMsg", "info", tr("Uploading and reading the CV… (about a minute)"));
+      await apiForm("/api/cv/upload", form);
+      await loadCv();
+      if (f.name.toLowerCase().endsWith(".pdf")) {
+        msg("cvMsg", "info", tr("CV read. Now copying its layout… (up to 4 minutes)"));
+        await api("/api/cv/layout", {});
+        await loadCv();
+        msg("cvMsg", "ok", tr("Done. Click Preview PDF to check the layout."));
+      } else msg("cvMsg", "ok", tr("Done. A Word file keeps the default layout: click Preview PDF to see it."));
+    } catch (e) { msg("cvMsg", "bad", e.message); }
+  });
+}
+async function cvAction(kind) {
+  const btn = event.target;
+  const path = { layout: "/api/cv/layout", reset: "/api/cv/layout/reset", facts: "/api/cv/facts" }[kind];
+  const wait = { layout: tr("Copying the layout… (up to 4 minutes)"), reset: tr("Working…"), facts: tr("Reading the CV… (about a minute)") }[kind];
+  await busy(btn, async () => {
+    try { msg("cvMsg", "info", wait); await api(path, {}); await loadCv(); msg("cvMsg", "ok", tr("Done.")); }
+    catch (e) { msg("cvMsg", "bad", e.message); }
+  });
+}
+async function downloadFile(path, name, msgId) {
+  try {
+    if (msgId) msg(msgId, "info", tr("Preparing the file…"));
+    const r = await fetch(path, { headers: { "X-Token": TOKEN, "X-Profile": PROFILE } });
+    if (!r.ok) { let e = ""; try { e = (await r.json()).error; } catch {} throw new Error(e || ("HTTP " + r.status)); }
+    const blob = await r.blob();
+    const cd = r.headers.get("Content-Disposition") || "";
+    const m = cd.match(/filename\*=UTF-8''([^;]+)/i) || cd.match(/filename="?([^";]+)"?/i);
+    const url = URL.createObjectURL(blob), a = document.createElement("a");
+    a.href = url; a.download = name || (m ? decodeURIComponent(m[1]) : "document.pdf");
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    if (msgId) msg(msgId, "ok", tr("Downloaded."));
+  } catch (e) { if (msgId) msg(msgId, "bad", e.message); else toast(e.message); }
 }
 
 // ---------- Telegram ----------
@@ -1014,10 +1091,13 @@ async function loadHistory() {
   try {
     const rows = (await api("/api/history")).rows;
     $("historyTable").innerHTML = !rows.length ? `<p>${tr("No ad sent yet.")}</p>` :
-      `<table><tr><th>${tr("Ad")}</th><th>${tr("Place")}</th><th>${tr("Score")}</th><th>${tr("Sent")}</th><th>${tr("Decision")}</th><th>${tr("Comments")}</th></tr>` + rows.map(r =>
+      `<table><tr><th>${tr("Ad")}</th><th>${tr("Place")}</th><th>${tr("Score")}</th><th>${tr("Sent")}</th><th>${tr("Decision")}</th><th>${tr("Comments")}</th><th>${tr("Documents")}</th></tr>` + rows.map(r =>
         `<tr class="notr"><td><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a><br><span class="hint">${esc(r.employer)} · ${esc(r.source)}${r.norwegian_required ? " · " + tr("Norwegian required") : ""}</span></td>` +
         `<td>${esc(title(r.municipal || ""))}</td><td>${esc(r.score)}/5</td><td>${esc((r.sent_at || "").slice(0, 10))}</td>` +
-        `<td>${decisionBadge(r.decision)}</td><td>${esc(r.notes || "")}</td></tr>`).join("") + "</table>";
+        `<td>${decisionBadge(r.decision)}</td><td>${esc(r.notes || "")}</td>` +
+        `<td>${(r.docs || []).map(n => `<button class="docbtn" data-uuid="${esc(r.uuid)}" data-name="${esc(n)}">${n.startsWith("CV") ? tr("CV") : tr("Letter")}</button>`).join(" ")}</td></tr>`).join("") + "</table>";
+    document.querySelectorAll(".docbtn").forEach(b => b.onclick = () =>
+      downloadFile(`/api/applications/file?uuid=${encodeURIComponent(b.dataset.uuid)}&name=${encodeURIComponent(b.dataset.name)}`, b.dataset.name));
     if (!statusData) refreshStatus();
   } catch (e) { $("historyTable").textContent = e.message; }
 }

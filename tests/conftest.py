@@ -45,6 +45,8 @@ def isolated_preferences(tmp_path, monkeypatch):
     monkeypatch.setattr(preferences, "PATH", tmp_path / "preferences.json")
     monkeypatch.setattr(profiles, "PATH", tmp_path / "profiles.json")  # no profiles.json: one profile from .env
     monkeypatch.setattr(profiles, "PROFILES_DIR", tmp_path / "profiles")  # never the real profile files
+    from jobalerts import cvdocs
+    monkeypatch.setattr(cvdocs, "APPS_DIR", tmp_path / "applications")  # never the real documents
 
 
 from jobalerts import dashboard as _dashboard  # noqa: E402

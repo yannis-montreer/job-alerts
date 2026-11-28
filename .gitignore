@@ -4,7 +4,7 @@
 # Personal data: search profile, CVs, database, logs
 profile.md
 preferences.json
-cv*
+/cv*
 *.pdf
 *.docx
 data/
