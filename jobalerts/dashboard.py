@@ -139,7 +139,8 @@ def account() -> dict | None:
         return None
     u = users.get(uid)
     if u and u.password_hash and secrets.compare_digest(auth, _fingerprint(u.password_hash)):
-        return dict(role="user", id=u.id, username=u.username, profiles=u.profile_ids(), language=u.language)
+        return dict(role="user", id=u.id, username=u.username, profiles=u.profile_ids(), language=u.language,
+                    must_change=u.must_change)
     return None
 
 
@@ -165,6 +166,7 @@ USER_ROUTES = {
     ("GET", "/api/schedule"), ("POST", "/api/schedule"), ("POST", "/api/run"), ("GET", "/api/run"),
     ("GET", "/api/history"),
 }
+MUST_CHANGE_ROUTES = {("GET", "/"), ("GET", "/logout"), ("GET", "/api/account"), ("POST", "/api/account")}
 NO_PROFILE_ROUTES = {("GET", "/"), ("GET", "/logout"), ("GET", "/api/account"), ("POST", "/api/account"),
                      ("GET", "/api/settings")}
 
@@ -204,6 +206,8 @@ def _guard():
         key = (request.method, request.path)
         if key not in USER_ROUTES:
             return _deny("Only the admin can do this")
+        if g.account.get("must_change") and key not in MUST_CHANGE_ROUTES:
+            return _deny("Choose your own password first (My account)")
         own = g.account["profiles"]
         pid = pid or (own[0] if own else "")
         if pid and pid not in own:
@@ -487,7 +491,8 @@ def page():
     ui = env_values().get("DASHBOARD_LANGUAGE", "").strip().lower()
     if is_user() and g.account.get("language"):
         ui = g.account["language"]
-    me = json.dumps(dict(role=g.account["role"], username=g.account["username"]) if g.account else {})
+    me = json.dumps(dict(role=g.account["role"], username=g.account["username"],
+                         must_change=bool(g.account.get("must_change"))) if g.account else {})
     fr = json.dumps(json.loads(PAGE_FR.read_text(encoding="utf-8")), ensure_ascii=False).replace("</", "<\\/")
     html = html.replace("{{TOKEN}}", TOKEN).replace("{{UI_LANG}}", ui if ui in ("en", "fr") else "en").replace("{{FR}}", fr)
     html = html.replace("{{REMOTE}}", "true" if is_remote() else "false").replace("{{ME}}", me.replace("</", "<\\/"))
@@ -1296,7 +1301,7 @@ def run_state():
 @app.get("/api/account")
 def get_account():
     a = g.account or {}
-    return jsonify(ok=True, role=a.get("role"), username=a.get("username"))
+    return jsonify(ok=True, role=a.get("role"), username=a.get("username"), must_change=bool(a.get("must_change")))
 
 
 @app.post("/api/account")
@@ -1309,7 +1314,7 @@ def change_my_password():
     if not u.check(str(body.get("current", ""))):
         raise UserError("The current password is wrong")
     try:
-        u = users.update(u.id, password=str(body.get("new", "")))
+        u = users.update(u.id, password=str(body.get("new", "")), by_admin=False)
     except ValueError as e:
         raise UserError(str(e)) from None
     session["auth"] = _fingerprint(u.password_hash)  # stay logged in here; other devices are logged out

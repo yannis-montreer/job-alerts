@@ -26,6 +26,7 @@ class User:
     password_hash: str = ""
     profiles: list = field(default_factory=list)
     language: str = ""  # dashboard language ("" = the admin's choice)
+    must_change: bool = False  # a password set by the admin: the user chooses their own at next login
 
     def profile_ids(self) -> list[str]:
         """Assigned profiles that still exist, in the admin's profile order."""
@@ -36,7 +37,7 @@ class User:
         return bool(self.password_hash) and check_password_hash(self.password_hash, password)
 
     def public(self) -> dict:
-        return dict(id=self.id, username=self.username, profiles=self.profile_ids())
+        return dict(id=self.id, username=self.username, profiles=self.profile_ids(), must_change=self.must_change)
 
 
 def load() -> list[User]:
@@ -93,12 +94,15 @@ def create(username: str, password: str, profile_ids=()) -> User:
     n = 1
     while f"u{n}" in ids:
         n += 1
-    user = User(id=f"u{n}", username=name, password_hash=_password(password), profiles=_profile_ids(profile_ids))
+    user = User(id=f"u{n}", username=name, password_hash=_password(password), profiles=_profile_ids(profile_ids),
+                must_change=True)
     save(users + [user])
     return user
 
 
-def update(user_id: str, profile_ids=None, password: str | None = None, language: str | None = None) -> User:
+def update(user_id: str, profile_ids=None, password: str | None = None, language: str | None = None,
+           by_admin: bool = True) -> User:
+    """A password set by the admin must be replaced by the user at their next login."""
     users = load()
     user = next((u for u in users if u.id == user_id), None)
     if user is None:
@@ -106,7 +110,10 @@ def update(user_id: str, profile_ids=None, password: str | None = None, language
     if profile_ids is not None:
         user.profiles = _profile_ids(profile_ids)
     if password is not None:
+        if not by_admin and user.check(password):
+            raise ValueError("Choose a password different from the current one")
         user.password_hash = _password(password)
+        user.must_change = by_admin
     if language is not None:
         if language not in ("en", "fr"):
             raise ValueError("Language must be en or fr")

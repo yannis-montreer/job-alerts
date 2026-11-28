@@ -95,6 +95,9 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
 .profilepick select { padding: 6px 8px; font-weight: 600; }
 .ptag { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 10px; background: var(--code); color: var(--muted); margin-left: 6px; vertical-align: middle; }
 .role-user .adminonly, body:not(.role-user) .useronly { display: none !important; }
+.must-change nav > a, .must-change .tabbar, .must-change .profilepick, .must-change #langBtn { display: none !important; }
+.mustmsg { display: none; }
+.must-change .mustmsg { display: block; }
 .userrow { border-top: 1px solid var(--line); padding: 12px 0; }
 .userrow:first-child { border-top: 0; padding-top: 0; }
 .userrow .who { font-weight: 600; }
@@ -546,6 +549,7 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
 <section id="account">
   <h2>My account</h2>
   <p class="lead">Logged in as <b class="notr" id="meName"></b>.</p>
+  <div class="msg info mustmsg">Your password was set by the admin: choose your own to continue.</div>
   <div class="card">
     <h3>Change my password</h3>
     <label for="myPwOld">Current password</label><input type="password" id="myPwOld" autocomplete="current-password">
@@ -622,6 +626,7 @@ const REMOTE = {{REMOTE}};
 const ME = {{ME}};
 const IS_USER = ME.role === "user";
 if (IS_USER) document.body.classList.add("role-user");
+if (ME.must_change) { document.body.classList.add("must-change"); location.hash = "#account"; }
 const FR = {{FR}};
 let UI = "{{UI_LANG}}";
 let settings = null, statusData = null, runTimer = null;
@@ -713,6 +718,7 @@ async function busy(btn, fn) { if (btn) btn.disabled = true; try { return await 
 
 // ---------- navigation ----------
 function show() {
+  if (ME.must_change && location.hash !== "#account") { location.hash = "#account"; return; }
   const id = (location.hash || "#overview").slice(1);
   document.querySelectorAll("section").forEach(s => s.classList.toggle("active", s.id === id));
   document.querySelectorAll("nav a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#" + id));
@@ -1151,7 +1157,7 @@ async function loadUsers() {
     $("newUserProfiles").innerHTML = boxes("new", []);
     $("userList").innerHTML = !r.users.length ? `<p class="hint">${tr("No user yet.")}</p>` : r.users.map(u => `
       <div class="userrow" data-user="${esc(u.id)}">
-        <div class="who notr">${esc(u.username)}</div>
+        <div class="who"><span class="notr">${esc(u.username)}</span>${u.must_change ? ` <span class="badge none">${tr("must choose a password")}</span>` : ""}</div>
         <div class="muni notr">${boxes("u-" + esc(u.id), u.profiles)}</div>
         <div class="row" style="margin-top:6px">
           <button class="primary" onclick="saveUserAlerts('${esc(u.id)}')">${tr("Save alerts")}</button>
@@ -1167,7 +1173,7 @@ async function createUser() {
   await busy(btn, async () => {
     try {
       await api("/api/users", { username: $("newUserName").value, password: $("newUserPw").value, profiles: checkedIds("data-new") });
-      msg("newUserMsg", "ok", tr("User {name} created: give them the address, their username and this password.", { name: $("newUserName").value.trim().toLowerCase() }));
+      msg("newUserMsg", "ok", tr("User {name} created: give them the address, their username and this password. They choose their own at first login.", { name: $("newUserName").value.trim().toLowerCase() }));
       $("newUserName").value = $("newUserPw").value = "";
       loadUsers();
     } catch (e) { msg("newUserMsg", "bad", e.message); }
@@ -1180,7 +1186,7 @@ async function saveUserAlerts(id) {
 async function resetUserPassword(id, name) {
   const pw = prompt(tr("New password for {name} (at least 12 characters):", { name }));
   if (!pw) return;
-  try { await api("/api/users/update", { id, password: pw }); msg("usersMsg", "ok", tr("Password changed: {name} is logged out everywhere.", { name })); }
+  try { await api("/api/users/update", { id, password: pw }); msg("usersMsg", "ok", tr("Password changed: {name} is logged out everywhere and chooses a new one at next login.", { name })); }
   catch (e) { msg("usersMsg", "bad", e.message); }
 }
 async function deleteUser(id, name) {
@@ -1197,6 +1203,7 @@ async function changeMyPassword() {
       if ($("myPwNew").value !== $("myPwNew2").value) throw new Error(tr("The two passwords are different."));
       await api("/api/account", { current: $("myPwOld").value, new: $("myPwNew").value });
       $("myPwOld").value = $("myPwNew").value = $("myPwNew2").value = "";
+      if (ME.must_change) { location.hash = "#overview"; location.reload(); return; }
       msg("myPwMsg", "ok", tr("Password changed."));
     } catch (e) { msg("myPwMsg", "bad", e.message); }
   });

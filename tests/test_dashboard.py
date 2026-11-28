@@ -397,8 +397,27 @@ def two_alerts(remote):
     r = remote.post("/api/users", base_url=BASE, headers=H,
                     json={"username": "Kari", "password": "kari password 1", "profiles": ["p2"]})
     assert r.status_code == 200 and r.get_json()["user"]["username"] == "kari"
+    all_users = users.load()
+    all_users[0].must_change = False  # the forced first change has its own test
+    users.save(all_users)
     assert remote.post("/login", base_url=REMOTE, data={"username": "kari", "password": "kari password 1"}).status_code == 302
     return remote
+
+
+def test_a_password_set_by_the_admin_must_be_replaced_first(remote):
+    remote.post("/api/users", base_url=BASE, headers=H, json={"username": "kari", "password": "from the admin"})
+    assert users.by_username("kari").must_change
+    remote.post("/login", base_url=REMOTE, data={"username": "kari", "password": "from the admin"})
+    assert b'"must_change": true' in remote.get("/", base_url=REMOTE).data
+    r = remote.get("/api/settings", base_url=REMOTE, headers=H)
+    assert r.status_code == 403 and "own password" in r.get_json()["error"]
+    same = remote.post("/api/account", base_url=REMOTE, headers=H, json={"current": "from the admin", "new": "from the admin"})
+    assert same.status_code == 400
+    assert remote.post("/api/account", base_url=REMOTE, headers=H, json={"current": "from the admin", "new": "my own password"}).status_code == 200
+    assert not users.by_username("kari").must_change
+    assert remote.get("/api/settings", base_url=REMOTE, headers=H).status_code == 200
+    remote.post("/api/users/update", base_url=BASE, headers=H, json={"id": users.by_username("kari").id, "password": "reset by admin"})
+    assert users.by_username("kari").must_change  # a reset asks again
 
 
 def test_a_user_sees_only_their_alerts(two_alerts):
@@ -414,7 +433,7 @@ def test_a_user_sees_only_their_alerts(two_alerts):
     assert c.get("/api/run", base_url=REMOTE, headers=H).get_json()["log"] == []
     assert c.post("/api/run", base_url=REMOTE, headers=H, json={"mode": "collect"}).status_code == 400
     page = c.get("/", base_url=REMOTE).data
-    assert b'const ME = {"role": "user", "username": "kari"}' in page
+    assert b'const ME = {"role": "user", "username": "kari", "must_change": false}' in page
 
 
 def test_a_user_changes_their_profile_but_not_the_machine(two_alerts):

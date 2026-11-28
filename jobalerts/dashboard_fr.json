@@ -427,9 +427,7 @@
   "No user yet.": "Aucun utilisateur pour l'instant.",
   "Save alerts": "Enregistrer les alertes",
   "Delete": "Supprimer",
-  "User {name} created: give them the address, their username and this password.": "Utilisateur {name} créé : donne-lui l'adresse, son nom d'utilisateur et ce mot de passe.",
   "New password for {name} (at least 12 characters):": "Nouveau mot de passe pour {name} (au moins 12 caractères) :",
-  "Password changed: {name} is logged out everywhere.": "Mot de passe changé : {name} est déconnecté partout.",
   "Delete the user \"{name}\"? Their alerts stay; only the account goes.": "Supprimer l'utilisateur « {name} » ? Ses alertes restent ; seul le compte disparaît.",
   "User deleted.": "Utilisateur supprimé.",
   "Password changed.": "Mot de passe changé.",
@@ -445,5 +443,9 @@
   "login notices": "avis de connexion",
   "Admin": "Admin",
   "only you": "toi seul",
-  "Alerts without a bot: {list}": "Alertes sans bot : {list}"
+  "Alerts without a bot: {list}": "Alertes sans bot : {list}",
+  "Your password was set by the admin: choose your own to continue.": "Ton mot de passe a été défini par l'administrateur : choisis le tien pour continuer.",
+  "must choose a password": "doit choisir un mot de passe",
+  "User {name} created: give them the address, their username and this password. They choose their own at first login.": "Utilisateur {name} créé : donne-lui l'adresse, son nom d'utilisateur et ce mot de passe. Il choisira le sien à la première connexion.",
+  "Password changed: {name} is logged out everywhere and chooses a new one at next login.": "Mot de passe changé : {name} est déconnecté partout et en choisira un nouveau à la prochaine connexion."
 }

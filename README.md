@@ -158,7 +158,8 @@ on the computer itself the dashboard is always the admin's. The **Users** page c
 (username and a starting password of 12+ characters, kept in `users.json`, git-ignored) and gives
 each one alerts (profiles). A user sees only those profiles and changes only what concerns them:
 preferences, profile text, CV, area, scores, Telegram language, message time, a full run of their
-own profile, their history, and their password (*My account*). They can add a Telegram bot to a
+own profile, their history, and their password (*My account*). A password set by the admin (new account or
+reset) must be replaced by the user at their next login before anything else opens. They can add a Telegram bot to a
 profile that has none; once its token and chat are saved, only the admin can change or remove it.
 Sources, Gmail, the AI, the schedule of the background tasks, other profiles and the run log stay
 the admin's. Every login, the admin's or a user's, is reported on the admin's Telegram.
