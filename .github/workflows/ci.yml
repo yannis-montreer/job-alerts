@@ -31,7 +31,7 @@ jobs:
       - name: Check the task scripts parse
         shell: pwsh
         run: |
-          foreach ($f in "setup_tasks.ps1", "setup_dashboard_task.ps1", "schedule_task.ps1") {
+          foreach ($f in "setup_tasks.ps1", "setup_dashboard_task.ps1", "schedule_task.ps1", "setup_boot_notice.ps1") {
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile("$PWD\$f", [ref]$null, [ref]$errors) | Out-Null
             if ($errors) { $errors | ForEach-Object { Write-Error "$f : $($_.Message)" }; exit 1 }

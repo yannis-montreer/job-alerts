@@ -193,6 +193,11 @@ def issue(profile: Profile) -> str:
     return ""
 
 
+def admin_bots() -> list[Bot]:
+    """The admin's bots that are set up (token and chat): admin notices go to the first one."""
+    return [b for b in all_bots() if b.admin_owned and b.token and str(b.chat_id).strip()]
+
+
 def profiles_of(bot: Bot) -> list[Profile]:
     return [p for p in all_profiles() if p.bot == bot.id]
 

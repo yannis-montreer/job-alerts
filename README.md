@@ -153,6 +153,14 @@ If [Tailscale](https://tailscale.com/) runs on this computer and on your phone, 
    (5 wrong passwords in 10 minutes) is reported on Telegram; the always-on dashboard is served by
    waitress. Turn it off with `tailscale funnel --https=10000 off`.
 
+**Restart notice.** `setup_boot_notice.ps1` (run once; it asks for administrator rights) creates
+the task `<Prefix>-BootNotice`, which runs at every Windows startup **before anyone logs in** and
+sends the admin's Telegram bot: that the computer restarted (and whether the shutdown was
+unexpected, e.g. a power cut), then either "back up" as soon as the dashboard answers, or, after
+5 minutes, a request to log in to Windows (the dashboard, the Telegram buttons and the daily runs
+need a login; automatic Windows login avoids the wait). `-Test` sends the notices right away;
+the log is `logs/boot.log`.
+
 **Users.** From the phone, the dashboard password belongs to the **admin** (username `admin`);
 on the computer itself the dashboard is always the admin's. The **Users** page creates accounts
 (username and a starting password of 12+ characters, kept in `users.json`, git-ignored) and gives

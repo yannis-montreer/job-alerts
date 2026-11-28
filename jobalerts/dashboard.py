@@ -236,7 +236,7 @@ def _headers(resp):
 
 def notice_bots() -> list:
     """The admin's bots that can receive security notices (the first one is used)."""
-    return [b for b in profiles.all_bots() if b.admin_owned and b.token and str(b.chat_id).strip()]
+    return profiles.admin_bots()
 
 
 def alert_owner(text: str):
