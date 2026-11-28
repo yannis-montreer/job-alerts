@@ -60,7 +60,7 @@ MIN_PASSWORD = 12  # the dashboard may be public (Tailscale Funnel)
 PUBLIC_PATHS = {"/login", "/manifest.webmanifest", "/sw.js", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"}
 TAILSCALE = [shutil.which("tailscale") or r"C:\Program Files\Tailscale\tailscale.exe"]
 
-SECRET_KEYS = {"TELEGRAM_BOT_TOKEN", "GMAIL_APP_PASSWORD", "NAV_TOKEN", "GEMINI_API_KEY"}
+SECRET_KEYS = {"TELEGRAM_BOT_TOKEN", "GMAIL_APP_PASSWORD", "NAV_TOKEN", "GEMINI_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"}
 PLAIN_KEYS = {"CANDIDATE_NAME", "LANGUAGE", "TELEGRAM_CHAT_ID", "GMAIL_ADDRESS", "GMAIL_FINN_LABEL",
               "TARGET_MUNICIPALITIES", "TARGET_COUNTIES", "AI_PROVIDER", "GEMINI_MODEL",
               "FINN_FETCH_PAGES", "FINN_CONTACT_EMAIL",
@@ -324,21 +324,8 @@ def _split(raw: str) -> set[str]:
 # ---------- checks ----------
 
 def claude_status() -> dict:
-    exe = triage.CLAUDE_EXE
-    if not exe.exists():
-        return dict(installed=False, logged_in=False, path=str(exe))
-    try:
-        out = subprocess.run([str(exe), "auth", "status"], capture_output=True, text=True,
-                             encoding="utf-8", timeout=60).stdout
-        info = json.loads(out)
-    except Exception as e:
-        return dict(installed=True, logged_in=False, error=str(e)[:200], path=str(exe))
-    exp = info.get("loginExpiresAt")
-    days = None
-    if exp:
-        days = (datetime.fromisoformat(exp.replace("Z", "+00:00")) - datetime.now(timezone.utc)).days
-    return dict(installed=True, logged_in=bool(info.get("loggedIn")), expires=exp, days_left=days,
-                plan=info.get("subscriptionType"), path=str(exe))
+    from . import claude_auth
+    return claude_auth.status(triage.CLAUDE_EXE)
 
 
 def powershell(command: str, timeout: int = 60) -> str:
@@ -624,6 +611,11 @@ def save_settings():
     for k in body.get("clear") or []:
         if k in SECRET_KEYS:
             updates[k] = ""
+    if "CLAUDE_CODE_OAUTH_TOKEN" in updates:  # a yearly token from `claude setup-token`: its date, for the reminders
+        tok = updates["CLAUDE_CODE_OAUTH_TOKEN"]
+        if tok and (len(tok) < 20 or re.search(r"\s", tok)):
+            raise UserError("This does not look like a Claude token: copy the whole line that starts with sk-ant-")
+        updates["CLAUDE_TOKEN_CREATED"] = datetime.now().date().isoformat() if tok else ""
     area = None
     if "area" in body:
         munis = {m.strip().upper() for m in body["area"].get("municipalities") or [] if m.strip()}
@@ -1219,6 +1211,18 @@ def _for_viewer(state: dict) -> dict:
         own = set(g.account["profiles"])
         state = dict(state, profiles=[r for r in state["profiles"] if r["id"] in own], catchup=None)
     return state
+
+
+@app.post("/api/claude/token")
+def claude_token():
+    """Opens a window running `claude setup-token`: a browser login, then a yearly token to copy."""
+    exe = triage.CLAUDE_EXE
+    if not exe.exists():
+        raise UserError("Claude Code is not installed: click Log in first")
+    cmd = (f"& {_ps_str(str(exe))} setup-token; "
+           "Write-Host ''; Write-Host 'Copy the whole token above (it starts with sk-ant-), paste it in the dashboard, AI page, then close this window.'")
+    subprocess.Popen(["powershell", "-NoExit", "-Command", cmd], creationflags=subprocess.CREATE_NEW_CONSOLE)
+    return jsonify(ok=True)
 
 
 @app.get("/api/schedule")

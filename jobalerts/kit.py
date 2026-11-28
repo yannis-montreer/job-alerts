@@ -9,7 +9,7 @@ import html
 import json
 import logging
 
-from . import cvdocs, db, preferences, profiles, telegram, triage
+from . import claude_auth, cvdocs, db, preferences, profiles, telegram, triage
 from .texts import language_name, t
 
 log = logging.getLogger(__name__)
@@ -158,6 +158,7 @@ def send_kits(con) -> int:
             con.execute("UPDATE kits SET error=? WHERE profile_id=? AND uuid=?", (err, *key))
             con.commit()
             log.error("Application kit failed for %s: %s", ad["title"], err)
+            claude_auth.report_failure(con, err)
             attempts = con.execute("SELECT attempts FROM kits WHERE profile_id=? AND uuid=?", key).fetchone()["attempts"]
             if attempts >= MAX_ATTEMPTS:
                 try:
@@ -191,6 +192,7 @@ def send_documents(con, p, ad) -> bool:
         con.execute("UPDATE kits SET docs_error=? WHERE profile_id=? AND uuid=?", (err, *key))
         con.commit()
         log.error("CV / letter PDFs failed for %s: %s", ad["title"], err)
+        claude_auth.report_failure(con, err)
         attempts = con.execute("SELECT docs_attempts FROM kits WHERE profile_id=? AND uuid=?", key).fetchone()[0]
         if attempts >= MAX_ATTEMPTS:
             try:

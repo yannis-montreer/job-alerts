@@ -13,7 +13,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 
-from . import db, kit, profiles, telegram
+from . import claude_auth, db, kit, profiles, telegram
 
 log = logging.getLogger(__name__)
 WAIT_S = 50              # long-polling wait per request
@@ -86,10 +86,17 @@ class Listener:
 
     def _kit_loop(self):
         con = db.connect()
+        checked = 0.0
         while not self.stop.is_set():
             # Kits right after a Keep, and a retry every 30 minutes for failed ones.
             self.kits_due.wait(1800)
             self.kits_due.clear()
+            if time.monotonic() - checked > 3 * 3600:  # Claude login / token expiry, for the admin
+                checked = time.monotonic()
+                try:
+                    claude_auth.check_expiry(con)
+                except Exception as e:
+                    log.warning("Claude login check: %s", str(e)[:200])
             for p in profiles.all_profiles():
                 try:
                     with profiles.use(p):

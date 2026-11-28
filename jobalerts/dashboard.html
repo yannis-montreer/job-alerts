@@ -392,7 +392,22 @@ nav h1 { display: flex; align-items: center; gap: 8px; }
     <ul class="checks" id="claudeState"><li>Loading…</li></ul>
     <div class="row"><button class="primary" id="claudeBtn" onclick="claudeLogin()">Log in</button>
       <button onclick="refreshStatus()">Refresh</button></div>
-    <p class="hint" style="margin-top:12px">The button opens a PowerShell window: it installs Claude Code if needed (official installer from claude.ai), then opens the login in your browser. Close that window when it says you are logged in, then click Refresh. The login lasts several weeks; you get a Telegram warning 5 days before it expires.</p>
+    <p class="hint" style="margin-top:12px">The button opens a PowerShell window: it installs Claude Code if needed (official installer from claude.ai), then opens the login in your browser. Close that window when it says you are logged in, then click Refresh. This login lasts a few weeks only.</p>
+    <h3 style="margin-top:18px">Yearly token (recommended)</h3>
+    <p class="hint">A token for programs that run unattended, valid about a year, with your Claude subscription: the daily sorting and the application kits then no longer depend on the login above. Do it once, at this computer:</p>
+    <ol class="steps">
+      <li>Click <b>Create a yearly token</b>: a window opens, then the Claude login in your browser.</li>
+      <li>Back in the window, copy the whole token (it starts with <code>sk-ant-</code>) and paste it below. Keep it private.</li>
+    </ol>
+    <label for="CLAUDE_CODE_OAUTH_TOKEN">Yearly token <span class="hint" id="CLAUDE_CODE_OAUTH_TOKEN_state"></span></label>
+    <input type="password" id="CLAUDE_CODE_OAUTH_TOKEN" autocomplete="off" placeholder="leave empty to keep the current value">
+    <div class="row">
+      <button onclick="claudeToken()">Create a yearly token</button>
+      <button class="primary" onclick="saveClaudeToken()">Save token</button>
+      <button onclick="removeClaudeToken()">Remove token</button>
+    </div>
+    <div class="msg" id="claudeTokenMsg"></div>
+    <p class="hint" style="margin-top:12px">Telegram warns the admin 7, 3 and 1 day(s) before the login or the token expires, and right away if a run fails because Claude is logged out.</p>
   </div>
 </section>
 
@@ -1065,6 +1080,28 @@ async function testGemini() {
     catch (e) { msg("gemMsg", "bad", e.message); }
   });
 }
+async function claudeToken() {
+  try { await api("/api/claude/token", {}); toast(tr("A window opened: log in, then copy the token into the field below.")); }
+  catch (e) { toast(e.message); }
+}
+async function saveClaudeToken() {
+  const btn = event.target;
+  await busy(btn, async () => {
+    try {
+      if (!$("CLAUDE_CODE_OAUTH_TOKEN").value.trim()) throw new Error(tr("Paste the token first."));
+      await api("/api/settings", { CLAUDE_CODE_OAUTH_TOKEN: $("CLAUDE_CODE_OAUTH_TOKEN").value.trim() });
+      await loadSettings(); await refreshStatus();
+      const c = statusData.claude;
+      msg("claudeTokenMsg", c.logged_in && c.mode === "token" ? "ok" : "bad",
+          c.logged_in && c.mode === "token" ? tr("Token saved and accepted by Claude.") : tr("Token saved, but Claude does not accept it: create a new one."));
+    } catch (e) { msg("claudeTokenMsg", "bad", e.message); }
+  });
+}
+async function removeClaudeToken() {
+  if (!confirm(tr("Remove the yearly token? Claude then uses the browser login again."))) return;
+  try { await api("/api/settings", { clear: ["CLAUDE_CODE_OAUTH_TOKEN"] }); await loadSettings(); await refreshStatus(); msg("claudeTokenMsg", "ok", tr("Token removed.")); }
+  catch (e) { msg("claudeTokenMsg", "bad", e.message); }
+}
 async function claudeLogin() {
   try { await api("/api/claude/login", {}); toast(tr("A PowerShell window opened: follow it, then click Refresh.")); }
   catch (e) { toast(e.message); }
@@ -1081,6 +1118,7 @@ async function refreshStatus() {
   const claudeLine = !c.installed ? ["bad", tr("Not installed")] : !c.logged_in ? ["bad", tr("Installed, not logged in")] :
     (c.days_left != null && c.days_left < 5) ? ["warn", tr("Logged in, expires in {n} day(s)", { n: c.days_left })] :
     ["ok", c.days_left != null ? tr("Logged in, expires in {n} days", { n: c.days_left }) : tr("Logged in")];
+  if (c.mode === "token" && c.logged_in) claudeLine[1] += " " + tr("(yearly token)");
   const tg = s.telegram.token && s.telegram.chat_id ? ["ok", (s.telegram.listener ? tr("Listening: taps are saved within seconds") : tr("Token and chat id saved (use Test to check)"))] :
     s.telegram.token ? ["warn", tr("Token saved, chat id missing")] : ["bad", tr("Not set up")];
   const prof = !s.profile.exists ? ["bad", tr("Missing")] : s.profile.is_template ? ["warn", tr("Still the template")] : ["ok", tr("Filled in")];

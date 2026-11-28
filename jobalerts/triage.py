@@ -133,8 +133,9 @@ def claude_json(prompt: str, schema: dict, pdf=None) -> dict:
         "--no-session-persistence",
         "--disable-slash-commands",
     ]
-    # No API key: force the subscription login.
-    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    # No API key: the subscription, through the long-lived token when there is one.
+    from . import claude_auth
+    env = claude_auth.cli_env()
     workdir = config.ROOT / "data"
     if pdf:  # only this file in the folder the AI can read
         import shutil

@@ -123,6 +123,11 @@ that walks you through every step below, with a test button for each part:
 - **Sources:** switch NAV, Finn and LinkedIn on or off; Gmail connection; check buttons.
 - **Output (Telegram):** save the bot token from @BotFather, detect your chat id, test message.
 - **AI:** choose Claude or Gemini. Claude: install and log in, see when the login expires.
+  The browser login lasts only a few weeks; **Create a yearly token** runs `claude setup-token`
+  (a token for unattended use, about a year, with your subscription) and the token pasted there
+  (`CLAUDE_CODE_OAUTH_TOKEN` in `.env`) is used for the sorting and the kits. The admin's bot is
+  warned 7, 3 and 1 day(s) before the login or token expires, and right away if a run fails
+  because Claude is logged out (with a link to the AI page: `DASHBOARD_PUBLIC_URL`, optional).
   Gemini: save the API key and test it.
 - **Finn alerts:** Gmail address and app password, connection test; optional full-ad reading
   (only with Finn's written permission) and deletion of the stored descriptions.

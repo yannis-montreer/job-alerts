@@ -69,6 +69,7 @@ def no_windows_tasks(monkeypatch):
     monkeypatch.setattr(dashboard, "powershell", blocked)
     monkeypatch.setattr(dashboard, "list_tasks", lambda: [])
     monkeypatch.setattr(dashboard, "alert_owner", lambda text: None)  # never a real Telegram message
+    monkeypatch.setattr(dashboard, "reload_settings", lambda: None)  # would load the real .env into the tests
 
 
 @pytest.fixture

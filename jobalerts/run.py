@@ -19,7 +19,7 @@ import time
 import traceback
 from datetime import datetime, timedelta, timezone
 
-from . import config, db, finn, kit, linkedin, listener, nav, profiles, telegram, triage
+from . import claude_auth, config, db, finn, kit, linkedin, listener, nav, profiles, telegram, triage
 from .texts import t
 
 LOGIN_WARN_DAYS = 5
@@ -48,26 +48,15 @@ def scrub(text: str) -> str:
 
 
 def check_claude_login():
-    """Warn (once a day) when the CLI subscription login expires soon."""
-    if config.AI_PROVIDER != "claude":
-        return
+    """Warn the admin before the Claude login or token expires (see claude_auth)."""
     try:
-        out = subprocess.run([str(triage.CLAUDE_EXE), "auth", "status"], capture_output=True,
-                             text=True, encoding="utf-8", timeout=60).stdout
-        info = json.loads(out)
-    except Exception as e:  # optional information: never fail for this
-        logging.warning("auth status unreadable: %s", e)
-        return
-    exp = info.get("loginExpiresAt")
-    if not info.get("loggedIn") or not exp:
-        return
-    left = datetime.fromisoformat(exp.replace("Z", "+00:00")) - datetime.now(timezone.utc)
-    if left < timedelta(days=LOGIN_WARN_DAYS):
         con = db.connect()
-        today = datetime.now().date().isoformat()
-        if db.get_meta(con, "login_warned") != today:
-            telegram.send_text(t("login_expiry", days=max(left.days, 0)))
-            db.set_meta(con, "login_warned", today)
+        try:
+            claude_auth.check_expiry(con)
+        finally:
+            con.close()
+    except Exception as e:  # optional information: never fail for this
+        logging.warning("Claude login check failed: %s", e)
 
 
 def collect_clicks(con):
@@ -144,6 +133,7 @@ def run(collect_only: bool, profile_id: str | None = None) -> int:
         except Exception as e:
             failed.append(p)
             logging.error("Profile %s failed:\n%s", p.name or p.id, scrub(traceback.format_exc()))
+            claude_auth.report_failure(con, str(e))
             try:
                 with profiles.use(p):
                     telegram.send_text(t("run_failed", mode=p.name or p.id, err=scrub(str(e))[:600]))
